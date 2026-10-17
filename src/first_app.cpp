@@ -173,6 +173,8 @@ namespace rap {
                     camera.getProjection();
 				ubo.view = camera.getView();
 
+                ubo.inverseView = camera.getInverseView();
+
                 pointLightSystem.update(frameInfo, ubo);
 
                 uboBuffers[frameIndex]->writeToBuffer(&ubo);
@@ -278,5 +280,4 @@ namespace rap {
             gameObjects.emplace(pointLight.getId(), std::move(pointLight));
         }
     }
-
 } // namespace rap

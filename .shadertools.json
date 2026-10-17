@@ -1,0 +1,7 @@
+
+{
+  "glsl": {
+    "targetClient": "Vulkan",
+    "spirvVersion": "1.0"
+  }
+}
