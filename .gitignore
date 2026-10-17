@@ -1,0 +1,62 @@
+
+# ==========================================
+# Raptor Engine - Git Ignore
+# ==========================================
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Testing/
+build/
+cmake-build-*/
+
+# Your generated build output folders
+/test builds/
+/Release builds/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Compiled C/C++ files
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.pch
+*.idb
+*.ipch
+
+# Debugging and profiling output
+*.dmp
+*.prof
+*.profraw
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.old
+
+# Windows junk
+Thumbs.db
+Desktop.ini
+
+# Editor folders
+.vscode/
+
+# Python cache (if any tools use Python)
+__pycache__/
+*.py[cod]
+
+# Blender backups
+*.blend1
+*.blend2

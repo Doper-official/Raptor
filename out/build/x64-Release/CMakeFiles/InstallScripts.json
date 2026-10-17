@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"F:/coding projects/C++ projects/Engine/out/build/x64-Release/cmake_install.cmake",
+		"F:/coding projects/C++ projects/Engine/out/build/x64-Release/_deps/glfw-build/cmake_install.cmake",
+		"F:/coding projects/C++ projects/Engine/out/build/x64-Release/_deps/glfw-build/src/cmake_install.cmake",
+		"F:/coding projects/C++ projects/Engine/out/build/x64-Release/_deps/glm-build/cmake_install.cmake",
+		"F:/coding projects/C++ projects/Engine/out/build/x64-Release/_deps/glm-build/glm/cmake_install.cmake",
+		"F:/coding projects/C++ projects/Engine/out/build/x64-Release/_deps/tinyobjloader-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

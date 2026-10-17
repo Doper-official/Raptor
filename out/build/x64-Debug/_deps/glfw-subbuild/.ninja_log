@@ -1,0 +1,37 @@
+# ninja log v7
+4	68	8124367395397416	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-mkdir	31aa659677ddc05e
+4	68	8124367395397416	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-mkdir	31aa659677ddc05e
+68	8478	8124367479469761	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-download	d0e5ec5f84a8f60
+68	8478	8124367479469761	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-download	d0e5ec5f84a8f60
+4	174	8138629468681014	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-update	616a5a50f5e50135
+4	174	8138629468681014	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-update	616a5a50f5e50135
+174	234	8138629470913356	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-patch	c0f06683f82a9cf1
+174	234	8138629470913356	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-patch	c0f06683f82a9cf1
+234	293	8138629471504551	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-configure	be9550a221ea6f17
+234	293	8138629471504551	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-configure	be9550a221ea6f17
+293	352	8138629472100624	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-build	73e83f49c95af9ad
+293	352	8138629472100624	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-build	73e83f49c95af9ad
+352	413	8138629472711666	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-install	c0415da4108403a4
+352	413	8138629472711666	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-install	c0415da4108403a4
+414	474	8138629473313630	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-test	be2da01a2909e124
+414	474	8138629473313630	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-test	be2da01a2909e124
+474	552	8138629474103448	CMakeFiles/glfw-populate-complete	2c459208858e669e
+474	552	8138629474103448	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-done	2c459208858e669e
+474	552	8138629474103448	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/CMakeFiles/glfw-populate-complete	2c459208858e669e
+474	552	8138629474103448	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-done	2c459208858e669e
+4	172	8138688584726314	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-update	616a5a50f5e50135
+4	172	8138688584726314	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-update	616a5a50f5e50135
+173	240	8138688587005612	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-patch	c0f06683f82a9cf1
+173	240	8138688587005612	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-patch	c0f06683f82a9cf1
+240	304	8138688587650758	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-configure	be9550a221ea6f17
+240	304	8138688587650758	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-configure	be9550a221ea6f17
+304	368	8138688588295996	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-build	73e83f49c95af9ad
+304	368	8138688588295996	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-build	73e83f49c95af9ad
+368	430	8138688588915982	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-install	c0415da4108403a4
+368	430	8138688588915982	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-install	c0415da4108403a4
+431	494	8138688589556376	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-test	be2da01a2909e124
+431	494	8138688589556376	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-test	be2da01a2909e124
+495	579	8138688590409968	CMakeFiles/glfw-populate-complete	2c459208858e669e
+495	579	8138688590409968	glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-done	2c459208858e669e
+495	579	8138688590409968	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/CMakeFiles/glfw-populate-complete	2c459208858e669e
+495	579	8138688590409968	F:/coding projects/C++ projects/Engine/out/build/x64-Debug/_deps/glfw-subbuild/glfw-populate-prefix/src/glfw-populate-stamp/glfw-populate-done	2c459208858e669e
