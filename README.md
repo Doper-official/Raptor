@@ -24,5 +24,6 @@
 - WIP (work in progress)
 
 ### Extras
-  if the liscence does not specify in case- these are under effect,
-      - you are allowed to use it completely in any project under the assumption that this project is PROPERLY CREDITED
+  if the liscence does not specify in case-
+  these are under effect,
+  - you are allowed to use it completely in any project under the assumption that this project is PROPERLY CREDITED
