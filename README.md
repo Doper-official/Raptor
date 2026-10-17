@@ -1,4 +1,4 @@
-# RAPTOR GAME ENGINE
+# RAPTOR GAME ENGINE 🫩✌️
 ## Features
 - Renderer: Custom Vulkan Engine
 - C++ standard: 23
