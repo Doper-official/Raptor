@@ -182,6 +182,8 @@ namespace rap {
                 // Render lawl.
                 rapRenderer.beginSwapChainRenderPass(commandBuffer);
 
+                
+                //order matters
                 simpleRenderSystem.renderGameObjects(
                     frameInfo
                 );

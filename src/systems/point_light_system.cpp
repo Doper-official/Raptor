@@ -8,8 +8,10 @@
 #include <glm/gtc/constants.hpp>
 
 // std
+#include <array>
 #include <cassert>
 #include <stdexcept>
+#include <map>
 
 namespace rap {
 
@@ -83,6 +85,7 @@ namespace rap {
 
         RaptorPipeline::defaultPipelineConfigInfo(
             pipelineConfig);
+        RaptorPipeline::enableAlphaBlending(pipelineConfig);
 
         pipelineConfig.attributeDescriptions.clear();
         pipelineConfig.bindingDescriptions.clear();
@@ -130,6 +133,18 @@ namespace rap {
 
     void PointLightSystem::render(
         FrameInfo& frameInfo) {
+        //sort lights
+        std::map<float, RaptorGameObject::id_t> sorted;
+        for (const auto& kv : frameInfo.gameObjects) {
+            auto& obj = kv.second;
+            if (obj.pointLight == nullptr) continue;
+
+            //calculate distance
+            auto offset = frameInfo.camera.getPosition() - obj.transform.translation;
+            float disSquared = glm::dot(offset, offset);
+            sorted[disSquared] = obj.getId();
+
+        }
 
         pipeline->bind(frameInfo.commandBuffer);
 
@@ -143,8 +158,11 @@ namespace rap {
             0,
             nullptr);
 
-        for (auto& kv : frameInfo.gameObjects) {
-            auto& obj = kv.second;
+        // iterate through sorted lights in the reverse order
+        for (auto it = sorted.rbegin(); it != sorted.rend(); ++it) {
+            //use game object to find light ovject
+
+            auto& obj = frameInfo.gameObjects.at(it->second);
             if (obj.pointLight == nullptr) continue;
 
             PointLightPushConstants push{};

@@ -12,8 +12,7 @@ compile_commands.json
 Testing/
 
 # Custom build output folders
-/test builds/
-/Release builds/
+/Test builds/
 
 # Compiled C/C++ outputs
 *.obj

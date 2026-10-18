@@ -83,6 +83,8 @@ namespace rap {
         static void defaultPipelineConfigInfo(
             RaptorPipelineConfigInfo& configInfo);
 
+        static void enableAlphaBlending(RaptorPipelineConfigInfo& configInfo);
+
     private:
 
         static std::vector<char> readFile(

@@ -55,7 +55,7 @@ void main() {
     vec3 halfAngle = normalize(directionToLight + viewDirection);
     float blinnTerm = dot(surfaceNormal, halfAngle);
     blinnTerm = clamp(blinnTerm, 0, 1);
-    blinnTerm = pow(blinnTerm, 1024.0); // higher values -> sharper highlights
+    blinnTerm = pow(blinnTerm, 128.0); // higher values -> sharper highlights
     specularLight += intensity * blinnTerm;
   }
 
