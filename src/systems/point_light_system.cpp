@@ -168,7 +168,7 @@ namespace rap {
             PointLightPushConstants push{};
             push.position = glm::vec4(obj.transform.translation, 1.f);
             push.color = glm::vec4(obj.color, obj.pointLight->lightIntensity);
-            push.radius = (obj.transform.scale.x * 0.5f);
+            push.radius = (obj.transform.scale.x * .75f);
 
             vkCmdPushConstants(
                 frameInfo.commandBuffer,
