@@ -1,24 +1,30 @@
+
 #include "systems/point_light_system.hpp"
 
 // libs
+#define GLM_ENABLE_EXPERIMENTAL
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/rotate_vector.hpp>
 
 // std
-#include <array>
+#include <algorithm>
 #include <cassert>
+#include <memory>
 #include <stdexcept>
-#include <map>
+#include <utility>
+#include <vector>
 
 namespace rap {
 
     struct PointLightPushConstants {
         glm::vec4 position{};
         glm::vec4 color{};
-        float radius;
+        float radius{};
     };
 
     PointLightSystem::PointLightSystem(
@@ -31,11 +37,9 @@ namespace rap {
         createPipeline(renderPass);
     }
 
-
     PointLightSystem::~PointLightSystem() {
 
-        vkDeviceWaitIdle(
-            device.device());
+        vkDeviceWaitIdle(device.device());
 
         vkDestroyPipelineLayout(
             device.device(),
@@ -43,23 +47,31 @@ namespace rap {
             nullptr);
     }
 
-
-    void PointLightSystem::createPipelineLayout(VkDescriptorSetLayout globalSetLayout) {
+    void PointLightSystem::createPipelineLayout(
+        VkDescriptorSetLayout globalSetLayout) {
 
         VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushConstantRange.stageFlags =
+            VK_SHADER_STAGE_VERTEX_BIT |
+            VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(PointLightPushConstants);
+        pushConstantRange.size =
+            sizeof(PointLightPushConstants);
 
-        std::vector<VkDescriptorSetLayout> descriptorSetLayouts{ globalSetLayout };
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts{
+            globalSetLayout
+        };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-        pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
+        pipelineLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount =
+            static_cast<uint32_t>(descriptorSetLayouts.size());
+        pipelineLayoutInfo.pSetLayouts =
+            descriptorSetLayouts.data();
         pipelineLayoutInfo.pushConstantRangeCount = 1;
-        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
+        pipelineLayoutInfo.pPushConstantRanges =
+            &pushConstantRange;
 
         if (vkCreatePipelineLayout(
             device.device(),
@@ -72,7 +84,6 @@ namespace rap {
         }
     }
 
-
     void PointLightSystem::createPipeline(
         VkRenderPass renderPass) {
 
@@ -80,71 +91,104 @@ namespace rap {
             pipelineLayout != VK_NULL_HANDLE &&
             "Cannot create pipeline before pipeline layout");
 
-
         RaptorPipelineConfigInfo pipelineConfig{};
 
         RaptorPipeline::defaultPipelineConfigInfo(
             pipelineConfig);
-        RaptorPipeline::enableAlphaBlending(pipelineConfig);
+
+        RaptorPipeline::enableAlphaBlending(
+            pipelineConfig);
 
         pipelineConfig.attributeDescriptions.clear();
         pipelineConfig.bindingDescriptions.clear();
 
-        pipelineConfig.renderPass =
-            renderPass;
+        pipelineConfig.renderPass = renderPass;
+        pipelineConfig.pipelineLayout = pipelineLayout;
 
-        pipelineConfig.pipelineLayout =
-            pipelineLayout;
-
-
-        pipeline =
-            std::make_unique<RaptorPipeline>(
-                device,
-                "shaders/point_light.vert.spv",
-                "shaders/point_light.frag.spv",
-                pipelineConfig);
+        pipeline = std::make_unique<RaptorPipeline>(
+            device,
+            "shaders/point_light.vert.spv",
+            "shaders/point_light.frag.spv",
+            pipelineConfig);
     }
 
     void PointLightSystem::update(
-        FrameInfo& frameInfo, GlobalUbo& ubo) {
+        FrameInfo& frameInfo,
+        GlobalUbo& ubo) {
+
         auto rotateLight = glm::rotate(
             glm::mat4(1.f),
             frameInfo.frameTime,
-            glm::vec3{ 0.f, -1.f, 0.f }
-        );
+            glm::vec3{ 0.f, -1.f, 0.f });
 
         int lightIndex = 0;
+
         for (auto& kv : frameInfo.gameObjects) {
             auto& obj = kv.second;
-            if (obj.pointLight == nullptr) continue;
 
-            assert(lightIndex < MAX_LIGHTS && "too many lights, go fix");
+            if (obj.pointLight == nullptr) {
+                continue;
+            }
 
-            //update light position
-            obj.transform.translation = glm::vec3(rotateLight * glm::vec4(obj.transform.translation, 1.f));
+            assert(
+                lightIndex < MAX_LIGHTS &&
+                "too many lights, go fix");
 
-            //copy light to ubo or smth
-            ubo.pointLights[lightIndex].position = glm::vec4(obj.transform.translation, 1.f);
-            ubo.pointLights[lightIndex].color = glm::vec4(obj.color, obj.pointLight->lightIntensity);
-            lightIndex += 1;
+            // Update light position.
+            obj.transform.translation = glm::vec3(
+                rotateLight *
+                glm::vec4(obj.transform.translation, 1.f));
+
+            // Copy light data into the UBO.
+            ubo.pointLights[lightIndex].position =
+                glm::vec4(obj.transform.translation, 1.f);
+
+            ubo.pointLights[lightIndex].color =
+                glm::vec4(
+                    obj.color,
+                    obj.pointLight->lightIntensity);
+
+            ++lightIndex;
         }
+
         ubo.numLights = lightIndex;
     }
 
     void PointLightSystem::render(
         FrameInfo& frameInfo) {
-        //sort lights
-        std::map<float, RaptorGameObject::id_t> sorted;
+
+        // Store distance and object ID separately.
+        // Unlike std::map, this preserves duplicate distances.
+        std::vector<std::pair<float, RaptorGameObject::id_t>>
+            sorted;
+
+        sorted.reserve(frameInfo.gameObjects.size());
+
         for (const auto& kv : frameInfo.gameObjects) {
-            auto& obj = kv.second;
-            if (obj.pointLight == nullptr) continue;
+            const auto& obj = kv.second;
 
-            //calculate distance
-            auto offset = frameInfo.camera.getPosition() - obj.transform.translation;
-            float disSquared = glm::dot(offset, offset);
-            sorted[disSquared] = obj.getId();
+            if (obj.pointLight == nullptr) {
+                continue;
+            }
 
+            // Calculate squared distance from the camera.
+            const auto offset =
+                frameInfo.camera.getPosition() -
+                obj.transform.translation;
+
+            const float disSquared =
+                glm::dot(offset, offset);
+
+            sorted.emplace_back(disSquared, obj.getId());
         }
+
+        // Render farthest lights first for alpha blending.
+        std::sort(
+            sorted.begin(),
+            sorted.end(),
+            [](const auto& a, const auto& b) {
+                return a.first > b.first;
+            });
 
         pipeline->bind(frameInfo.commandBuffer);
 
@@ -158,27 +202,44 @@ namespace rap {
             0,
             nullptr);
 
-        // iterate through sorted lights in the reverse order
-        for (auto it = sorted.rbegin(); it != sorted.rend(); ++it) {
-            //use game object to find light ovject
+        for (const auto& light : sorted) {
 
-            auto& obj = frameInfo.gameObjects.at(it->second);
-            if (obj.pointLight == nullptr) continue;
+            // Find the game object for this light.
+            auto& obj =
+                frameInfo.gameObjects.at(light.second);
+
+            if (obj.pointLight == nullptr) {
+                continue;
+            }
 
             PointLightPushConstants push{};
-            push.position = glm::vec4(obj.transform.translation, 1.f);
-            push.color = glm::vec4(obj.color, obj.pointLight->lightIntensity);
-            push.radius = (obj.transform.scale.x * .75f);
+
+            push.position =
+                glm::vec4(obj.transform.translation, 1.f);
+
+            push.color =
+                glm::vec4(
+                    obj.color,
+                    obj.pointLight->lightIntensity);
+
+            push.radius =
+                obj.transform.scale.x * 0.75f;
 
             vkCmdPushConstants(
                 frameInfo.commandBuffer,
                 pipelineLayout,
-                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                VK_SHADER_STAGE_VERTEX_BIT |
+                VK_SHADER_STAGE_FRAGMENT_BIT,
                 0,
                 sizeof(PointLightPushConstants),
-                &push
-            );
-            vkCmdDraw(frameInfo.commandBuffer, 6, 1, 0, 0);
+                &push);
+
+            vkCmdDraw(
+                frameInfo.commandBuffer,
+                6,
+                1,
+                0,
+                0);
         }
     }
 
