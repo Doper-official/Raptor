@@ -151,6 +151,8 @@ endif()
 # ============================================================
 
 add_library(raptor SHARED
+
+    #src
     src/raptor_api.cpp
     src/first_app.cpp
     src/rap_window.cpp
@@ -163,9 +165,16 @@ add_library(raptor SHARED
     src/rap_camera.cpp
     src/rap_model.cpp
     src/rap_descriptors.cpp
+    src/rap_image.cpp
     src/keyboard_movement_controller.cpp
+
+    #systems
     src/systems/point_light_system.cpp
     src/systems/simple_render_system.cpp
+    src/systems/deferred_lighting_system.cpp
+
+    #buffers
+    src/buffers/rap_geometry_buffer.cpp
 )
 
 target_include_directories(raptor

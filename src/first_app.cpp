@@ -5,6 +5,7 @@
 #include "rap_camera.hpp"
 #include "systems/simple_render_system.hpp"
 #include "systems/point_light_system.hpp"
+#include "systems/deferred_lighting_system.hpp"
 #include "rap_window.hpp"
 #include "rap_buffer.hpp"
 
@@ -22,6 +23,7 @@
 #include <numeric>
 #include <memory>
 #include <vector>
+#include <iostream>
 
 namespace rap {
 
@@ -48,6 +50,9 @@ namespace rap {
     RaptorFirstApp::~RaptorFirstApp() {}
 
     void RaptorFirstApp::run() {
+
+        std::cout << "running raptor v0.0.2" << std::endl;
+
         // Create one uniform buffer per frame in flight.
         std::vector<std::unique_ptr<RapBuffer>> uboBuffers(
             RaptorSwapChain::MAX_FRAMES_IN_FLIGHT
@@ -85,11 +90,17 @@ namespace rap {
 
         SimpleRenderSystem simpleRenderSystem{
             device,
-            rapRenderer.getSwapChainRenderPass(),
+            rapRenderer.getGeometryRenderPass(),
             globalSetLayout->getDescriptorSetLayout()
         };
 
         PointLightSystem pointLightSystem{
+            device,
+            rapRenderer.getSwapChainRenderPass(),
+            globalSetLayout->getDescriptorSetLayout()
+        };
+
+        DeferredLightingSystem deferredLightingSystem{
             device,
             rapRenderer.getSwapChainRenderPass(),
             globalSetLayout->getDescriptorSetLayout()
@@ -179,19 +190,27 @@ namespace rap {
 
                 uboBuffers[frameIndex]->writeToBuffer(&ubo);
 
-                // Render lawl.
+                // Refresh this frame's G-buffer descriptors. beginFrame() has
+                // waited for this frame slot, so its descriptor set is safe to update.
+                deferredLightingSystem.updateDescriptorSet(
+                    frameIndex,
+                    rapRenderer.getCurrentGeometryBuffer());
+
+                // PASS 1: write surface data into the G-buffer.
+                rapRenderer.beginGeometryPass(commandBuffer);
+                simpleRenderSystem.renderGameObjects(frameInfo);
+                rapRenderer.endGeometryPass(commandBuffer);
+
+                // PASS 2: shade the G-buffer into the swapchain.
                 rapRenderer.beginSwapChainRenderPass(commandBuffer);
+                deferredLightingSystem.render(frameInfo);
 
-                
-                //order matters
-                simpleRenderSystem.renderGameObjects(
-                    frameInfo
-                );
-
+                // Keep the light billboards visible on top of the deferred scene.
                 pointLightSystem.render(frameInfo);
-
                 rapRenderer.endSwapChainRenderPass(commandBuffer);
+
                 rapRenderer.endFrame();
+                
             }
         }
     }

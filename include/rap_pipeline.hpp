@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-
-
 namespace rap {
 
     struct RaptorPipelineConfigInfo {
@@ -20,9 +18,12 @@ namespace rap {
         RaptorPipelineConfigInfo& operator=(
             const RaptorPipelineConfigInfo&) = delete;
 
+        std::vector<VkVertexInputBindingDescription>
+            bindingDescriptions{};
 
-        std::vector<VkVertexInputBindingDescription> bindingDescriptions{};
-        std::vector<VkVertexInputAttributeDescription> attributeDescriptions{};
+        std::vector<VkVertexInputAttributeDescription>
+            attributeDescriptions{};
+
         VkPipelineViewportStateCreateInfo
             viewportInfo{};
 
@@ -35,8 +36,13 @@ namespace rap {
         VkPipelineMultisampleStateCreateInfo
             multisampleInfo{};
 
+        // Existing single-attachment configuration.
         VkPipelineColorBlendAttachmentState
             colorBlendAttachment{};
+
+        // Optional multiple-attachment configuration.
+        std::vector<VkPipelineColorBlendAttachmentState>
+            colorBlendAttachments{};
 
         VkPipelineColorBlendStateCreateInfo
             colorBlendInfo{};
@@ -77,13 +83,13 @@ namespace rap {
         RaptorPipeline& operator=(
             const RaptorPipeline&) = delete;
 
-        void bind(
-            VkCommandBuffer commandBuffer);
+        void bind(VkCommandBuffer commandBuffer);
 
         static void defaultPipelineConfigInfo(
             RaptorPipelineConfigInfo& configInfo);
 
-        static void enableAlphaBlending(RaptorPipelineConfigInfo& configInfo);
+        static void enableAlphaBlending(
+            RaptorPipelineConfigInfo& configInfo);
 
     private:
 
@@ -101,15 +107,9 @@ namespace rap {
 
         RaptorDevice& device;
 
-        VkPipeline graphicsPipeline =
-            VK_NULL_HANDLE;
-
-        VkShaderModule vertShaderModule =
-            VK_NULL_HANDLE;
-
-        VkShaderModule fragShaderModule =
-            VK_NULL_HANDLE;
+        VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+        VkShaderModule vertShaderModule = VK_NULL_HANDLE;
+        VkShaderModule fragShaderModule = VK_NULL_HANDLE;
     };
-
 
 } // namespace rap

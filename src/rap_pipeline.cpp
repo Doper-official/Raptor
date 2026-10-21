@@ -14,7 +14,7 @@ namespace rap {
         const std::string& vertFilepath,
         const std::string& fragFilepath,
         const RaptorPipelineConfigInfo& configInfo)
-        : device{device} {
+        : device{ device } {
 
         createGraphicsPipeline(
             vertFilepath,
@@ -24,20 +24,26 @@ namespace rap {
 
     RaptorPipeline::~RaptorPipeline() {
 
-        vkDestroyShaderModule(
-            device.device(),
-            vertShaderModule,
-            nullptr);
+        if (vertShaderModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(
+                device.device(),
+                vertShaderModule,
+                nullptr);
+        }
 
-        vkDestroyShaderModule(
-            device.device(),
-            fragShaderModule,
-            nullptr);
+        if (fragShaderModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(
+                device.device(),
+                fragShaderModule,
+                nullptr);
+        }
 
-        vkDestroyPipeline(
-            device.device(),
-            graphicsPipeline,
-            nullptr);
+        if (graphicsPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(
+                device.device(),
+                graphicsPipeline,
+                nullptr);
+        }
     }
 
     std::vector<char> RaptorPipeline::readFile(
@@ -49,14 +55,12 @@ namespace rap {
         };
 
         if (!file.is_open()) {
-
             throw std::runtime_error(
                 "Failed to open file " + filepath);
         }
 
         size_t fileSize =
-            static_cast<size_t>(
-                file.tellg());
+            static_cast<size_t>(file.tellg());
 
         std::vector<char> buffer(fileSize);
 
@@ -64,7 +68,12 @@ namespace rap {
 
         file.read(
             buffer.data(),
-            fileSize);
+            static_cast<std::streamsize>(fileSize));
+
+        if (!file) {
+            throw std::runtime_error(
+                "Failed to read file " + filepath);
+        }
 
         file.close();
 
@@ -126,10 +135,10 @@ namespace rap {
         shaderStages[1].pName =
             "main";
 
-        auto& bindingDescriptions =
+        const auto& bindingDescriptions =
             configInfo.bindingDescriptions;
 
-        auto& attributeDescriptions =
+        const auto& attributeDescriptions =
             configInfo.attributeDescriptions;
 
         VkPipelineVertexInputStateCreateInfo
@@ -151,6 +160,32 @@ namespace rap {
 
         vertexInputInfo.pVertexBindingDescriptions =
             bindingDescriptions.data();
+
+        // Select single or multiple color-blend attachments.
+        const auto& colorBlendAttachments =
+            configInfo.colorBlendAttachments;
+
+        const uint32_t colorBlendAttachmentCount =
+            colorBlendAttachments.empty()
+            ? 1u
+            : static_cast<uint32_t>(
+                colorBlendAttachments.size());
+
+        const VkPipelineColorBlendAttachmentState*
+            colorBlendAttachmentData =
+            colorBlendAttachments.empty()
+            ? &configInfo.colorBlendAttachment
+            : colorBlendAttachments.data();
+
+        // Use a local copy so the caller's configuration is not modified.
+        VkPipelineColorBlendStateCreateInfo colorBlendInfo =
+            configInfo.colorBlendInfo;
+
+        colorBlendInfo.attachmentCount =
+            colorBlendAttachmentCount;
+
+        colorBlendInfo.pAttachments =
+            colorBlendAttachmentData;
 
         VkGraphicsPipelineCreateInfo pipelineInfo{};
 
@@ -178,7 +213,7 @@ namespace rap {
             &configInfo.multisampleInfo;
 
         pipelineInfo.pColorBlendState =
-            &configInfo.colorBlendInfo;
+            &colorBlendInfo;
 
         pipelineInfo.pDepthStencilState =
             &configInfo.depthStencilInfo;
@@ -195,19 +230,18 @@ namespace rap {
         pipelineInfo.subpass =
             configInfo.subpass;
 
-        pipelineInfo.basePipelineIndex =
-            -1;
+        pipelineInfo.basePipelineIndex = -1;
 
         pipelineInfo.basePipelineHandle =
             VK_NULL_HANDLE;
 
         if (vkCreateGraphicsPipelines(
-                device.device(),
-                VK_NULL_HANDLE,
-                1,
-                &pipelineInfo,
-                nullptr,
-                &graphicsPipeline) != VK_SUCCESS) {
+            device.device(),
+            VK_NULL_HANDLE,
+            1,
+            &pipelineInfo,
+            nullptr,
+            &graphicsPipeline) != VK_SUCCESS) {
 
             throw std::runtime_error(
                 "Failed to create graphics pipeline");
@@ -217,6 +251,14 @@ namespace rap {
     void RaptorPipeline::createShaderModule(
         const std::vector<char>& code,
         VkShaderModule* shaderModule) {
+
+        assert(
+            !code.empty() &&
+            "Cannot create shader module from empty code!");
+
+        assert(
+            code.size() % sizeof(uint32_t) == 0 &&
+            "SPIR-V bytecode size must be divisible by 4!");
 
         VkShaderModuleCreateInfo createInfo{};
 
@@ -231,10 +273,10 @@ namespace rap {
                 code.data());
 
         if (vkCreateShaderModule(
-                device.device(),
-                &createInfo,
-                nullptr,
-                shaderModule) != VK_SUCCESS) {
+            device.device(),
+            &createInfo,
+            nullptr,
+            shaderModule) != VK_SUCCESS) {
 
             throw std::runtime_error(
                 "Failed to create shader module");
@@ -265,71 +307,37 @@ namespace rap {
         configInfo.viewportInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 
-        configInfo.viewportInfo.viewportCount =
-            1;
+        configInfo.viewportInfo.viewportCount = 1;
+        configInfo.viewportInfo.pViewports = nullptr;
 
-        configInfo.viewportInfo.pViewports =
-            nullptr;
-
-        configInfo.viewportInfo.scissorCount =
-            1;
-
-        configInfo.viewportInfo.pScissors =
-            nullptr;
+        configInfo.viewportInfo.scissorCount = 1;
+        configInfo.viewportInfo.pScissors = nullptr;
 
         configInfo.rasterizationInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 
-        configInfo.rasterizationInfo.depthClampEnable =
-            VK_FALSE;
-
-        configInfo.rasterizationInfo.rasterizerDiscardEnable =
-            VK_FALSE;
-
-        configInfo.rasterizationInfo.polygonMode =
-            VK_POLYGON_MODE_FILL;
-
-        configInfo.rasterizationInfo.lineWidth =
-            1.0f;
-
-        configInfo.rasterizationInfo.cullMode =
-            VK_CULL_MODE_NONE;
-
-        configInfo.rasterizationInfo.frontFace =
-            VK_FRONT_FACE_CLOCKWISE;
-
-        configInfo.rasterizationInfo.depthBiasEnable =
-            VK_FALSE;
-
-        configInfo.rasterizationInfo.depthBiasConstantFactor =
-            0.0f;
-
-        configInfo.rasterizationInfo.depthBiasClamp =
-            0.0f;
-
-        configInfo.rasterizationInfo.depthBiasSlopeFactor =
-            0.0f;
+        configInfo.rasterizationInfo.depthClampEnable = VK_FALSE;
+        configInfo.rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
+        configInfo.rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
+        configInfo.rasterizationInfo.lineWidth = 1.0f;
+        configInfo.rasterizationInfo.cullMode = VK_CULL_MODE_NONE;
+        configInfo.rasterizationInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        configInfo.rasterizationInfo.depthBiasEnable = VK_FALSE;
+        configInfo.rasterizationInfo.depthBiasConstantFactor = 0.0f;
+        configInfo.rasterizationInfo.depthBiasClamp = 0.0f;
+        configInfo.rasterizationInfo.depthBiasSlopeFactor = 0.0f;
 
         configInfo.multisampleInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 
-        configInfo.multisampleInfo.sampleShadingEnable =
-            VK_FALSE;
-
+        configInfo.multisampleInfo.sampleShadingEnable = VK_FALSE;
         configInfo.multisampleInfo.rasterizationSamples =
             VK_SAMPLE_COUNT_1_BIT;
 
-        configInfo.multisampleInfo.minSampleShading =
-            1.0f;
-
-        configInfo.multisampleInfo.pSampleMask =
-            nullptr;
-
-        configInfo.multisampleInfo.alphaToCoverageEnable =
-            VK_FALSE;
-
-        configInfo.multisampleInfo.alphaToOneEnable =
-            VK_FALSE;
+        configInfo.multisampleInfo.minSampleShading = 1.0f;
+        configInfo.multisampleInfo.pSampleMask = nullptr;
+        configInfo.multisampleInfo.alphaToCoverageEnable = VK_FALSE;
+        configInfo.multisampleInfo.alphaToOneEnable = VK_FALSE;
 
         configInfo.colorBlendAttachment.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT |
@@ -337,20 +345,18 @@ namespace rap {
             VK_COLOR_COMPONENT_B_BIT |
             VK_COLOR_COMPONENT_A_BIT;
 
-        configInfo.colorBlendAttachment.blendEnable =
-            VK_FALSE;
+        configInfo.colorBlendAttachment.blendEnable = VK_FALSE;
+
+        // Initialize the multiple-attachment vector as empty.
+        configInfo.colorBlendAttachments.clear();
 
         configInfo.colorBlendInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 
-        configInfo.colorBlendInfo.logicOpEnable =
-            VK_FALSE;
+        configInfo.colorBlendInfo.logicOpEnable = VK_FALSE;
+        configInfo.colorBlendInfo.logicOp = VK_LOGIC_OP_COPY;
 
-        configInfo.colorBlendInfo.logicOp =
-            VK_LOGIC_OP_COPY;
-
-        configInfo.colorBlendInfo.attachmentCount =
-            1;
+        configInfo.colorBlendInfo.attachmentCount = 1;
 
         configInfo.colorBlendInfo.pAttachments =
             &configInfo.colorBlendAttachment;
@@ -358,26 +364,13 @@ namespace rap {
         configInfo.depthStencilInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 
-        configInfo.depthStencilInfo.depthTestEnable =
-            VK_TRUE;
-
-        configInfo.depthStencilInfo.depthWriteEnable =
-            VK_TRUE;
-
-        configInfo.depthStencilInfo.depthCompareOp =
-            VK_COMPARE_OP_LESS;
-
-        configInfo.depthStencilInfo.depthBoundsTestEnable =
-            VK_FALSE;
-
-        configInfo.depthStencilInfo.minDepthBounds =
-            0.0f;
-
-        configInfo.depthStencilInfo.maxDepthBounds =
-            1.0f;
-
-        configInfo.depthStencilInfo.stencilTestEnable =
-            VK_FALSE;
+        configInfo.depthStencilInfo.depthTestEnable = VK_TRUE;
+        configInfo.depthStencilInfo.depthWriteEnable = VK_TRUE;
+        configInfo.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS;
+        configInfo.depthStencilInfo.depthBoundsTestEnable = VK_FALSE;
+        configInfo.depthStencilInfo.minDepthBounds = 0.0f;
+        configInfo.depthStencilInfo.maxDepthBounds = 1.0f;
+        configInfo.depthStencilInfo.stencilTestEnable = VK_FALSE;
 
         configInfo.depthStencilInfo.front = {};
         configInfo.depthStencilInfo.back = {};
@@ -397,14 +390,18 @@ namespace rap {
             static_cast<uint32_t>(
                 configInfo.dynamicStateEnables.size());
 
-        configInfo.dynamicStateInfo.flags =
-            0;
+        configInfo.dynamicStateInfo.flags = 0;
 
-        configInfo.bindingDescriptions = RaptorModel::Vertex::getBindingDescriptions();
-        configInfo.attributeDescriptions = RaptorModel::Vertex::getAttributeDescriptions();
+        configInfo.bindingDescriptions =
+            RaptorModel::Vertex::getBindingDescriptions();
+
+        configInfo.attributeDescriptions =
+            RaptorModel::Vertex::getAttributeDescriptions();
     }
-    
-    void RaptorPipeline::enableAlphaBlending(RaptorPipelineConfigInfo& configInfo) {
+
+    void RaptorPipeline::enableAlphaBlending(
+        RaptorPipelineConfigInfo& configInfo) {
+
         configInfo.colorBlendAttachment.blendEnable =
             VK_TRUE;
 
@@ -413,12 +410,24 @@ namespace rap {
             VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT |
             VK_COLOR_COMPONENT_A_BIT;
-        configInfo.colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        configInfo.colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        configInfo.colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        configInfo.colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        configInfo.colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        configInfo.colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        configInfo.colorBlendAttachment.srcColorBlendFactor =
+            VK_BLEND_FACTOR_SRC_ALPHA;
+
+        configInfo.colorBlendAttachment.dstColorBlendFactor =
+            VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+
+        configInfo.colorBlendAttachment.colorBlendOp =
+            VK_BLEND_OP_ADD;
+
+        configInfo.colorBlendAttachment.srcAlphaBlendFactor =
+            VK_BLEND_FACTOR_ONE;
+
+        configInfo.colorBlendAttachment.dstAlphaBlendFactor =
+            VK_BLEND_FACTOR_ZERO;
+
+        configInfo.colorBlendAttachment.alphaBlendOp =
+            VK_BLEND_OP_ADD;
     }
 
 } // namespace rap

@@ -40,7 +40,7 @@ namespace rap {
 
 		GLFWwindow* getGLFWwindow() const;
 
-		void createWindowSurface(
+		VkResult createWindowSurface(
 			VkInstance instance,
 			VkSurfaceKHR* surface);
 

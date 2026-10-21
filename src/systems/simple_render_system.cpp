@@ -89,28 +89,27 @@ namespace rap {
 
         assert(
             pipelineLayout != VK_NULL_HANDLE &&
-            "Cannot create pipeline before pipeline layout");
-
+            "Pipeline layout must exist before creating the pipeline!");
 
         RaptorPipelineConfigInfo pipelineConfig{};
 
-        RaptorPipeline::defaultPipelineConfigInfo(
+        RaptorPipeline::defaultPipelineConfigInfo(pipelineConfig);
+
+        pipelineConfig.renderPass = renderPass;
+        pipelineConfig.pipelineLayout = pipelineLayout;
+
+        // G-buffer has TWO color attachments:
+        // 0 = albedo, 1 = world-space normal.
+        pipelineConfig.colorBlendAttachments = {
+            pipelineConfig.colorBlendAttachment,
+            pipelineConfig.colorBlendAttachment
+        };
+
+        pipeline = std::make_unique<RaptorPipeline>(
+            device,
+            "shaders/simple_shader.vert.spv",
+            "shaders/simple_shader.frag.spv",
             pipelineConfig);
-
-
-        pipelineConfig.renderPass =
-            renderPass;
-
-        pipelineConfig.pipelineLayout =
-            pipelineLayout;
-
-
-        pipeline =
-            std::make_unique<RaptorPipeline>(
-                device,
-                "shaders/simple_shader.vert.spv",
-                "shaders/simple_shader.frag.spv",
-                pipelineConfig);
     }
 
 
