@@ -1,72 +1,44 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 
-REM ============================================================
-REM Raptor Shader Compiler
-REM ============================================================
+REM Raptor Vulkan shader compiler
 
-REM Folder containing this .bat file (your shaders folder)
 set "SRC=%~dp0"
 
-REM Output directories
-set "OUT_DEBUG=F:\coding projects\C++ projects\Engine\test builds\shaders"
-set "OUT_RELEASE=F:\coding projects\C++ projects\Engine\Release Builds\shaders"
-
-REM Vulkan SDK compiler
-set "GLSLC=F:\Vulkan\Bin\glslc.exe"
-
-if not exist "%GLSLC%" (
-    echo ERROR: glslc.exe not found:
-    echo "%GLSLC%"
-    pause
-    exit /b 1
+if defined VULKAN_SDK (
+    set "GLSLC=%VULKAN_SDK%\Bin\glslc.exe"
+) else (
+    set "GLSLC=F:\Vulkan\Bin\glslc.exe"
 )
 
-REM Create output directories if needed
-if not exist "%OUT_DEBUG%" mkdir "%OUT_DEBUG%"
-if not exist "%OUT_RELEASE%" mkdir "%OUT_RELEASE%"
+if not exist "%GLSLC%" goto :NoCompiler
 
-set /a COUNT=0
 set /a FAIL=0
 
-echo Shader source: "%SRC%"
-echo Debug output: "%OUT_DEBUG%"
-echo Release output: "%OUT_RELEASE%"
-echo.
+for %%F in ("%SRC%*.vert" "%SRC%*.frag") do call :CompileShader "%%~fF"
 
-for %%E in (vert frag) do (
-    for %%F in ("%SRC%*.%%E") do (
-        if exist "%%~fF" (
-            echo Compiling %%~nxF
-
-            "%GLSLC%" "%%~fF" -o "%OUT_DEBUG%\%%~nxF.spv"
-            if errorlevel 1 (
-                echo FAILED Debug: %%~nxF
-                set /a FAIL+=1
-            ) else (
-                set /a COUNT+=1
-            )
-
-            "%GLSLC%" "%%~fF" -o "%OUT_RELEASE%\%%~nxF.spv"
-            if errorlevel 1 (
-                echo FAILED Release: %%~nxF
-                set /a FAIL+=1
-            ) else (
-                set /a COUNT+=1
-            )
-        )
-    )
-)
+if not "%FAIL%"=="0" goto :Failed
 
 echo.
-echo Successfully compiled: %COUNT%
-echo Failed: %FAIL%
+echo Shader compilation finished successfully.
+exit /b 0
 
-if %FAIL% GTR 0 (
-    echo WARNING: Some shader compilations failed.
-    pause
-    exit /b 1
-)
+:CompileShader
+if not exist "%~1" exit /b 0
 
-echo Shader compilation finished.
-pause
+echo Compiling %~nx1
+"%GLSLC%" "%~1" -o "%~1.spv"
+
+if errorlevel 1 set /a FAIL+=1
+
+exit /b 0
+
+:NoCompiler
+echo ERROR: glslc.exe not found: "%GLSLC%"
+echo Check your Vulkan SDK installation.
+exit /b 1
+
+:Failed
+echo.
+echo ERROR: %FAIL% shader compilation(s) failed.
+exit /b 1

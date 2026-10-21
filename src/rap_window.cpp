@@ -1,210 +1,216 @@
 #include "rap_window.hpp"
 
-#include <stdexcept>
-#include <utility>
+// GLFW native Win32 access must be enabled before including glfw3native.h.
+#define GLFW_EXPOSE_NATIVE_WIN32
+
+// Windows
+#include <windows.h>
+#include <shobjidl.h>
+#include <propkey.h>
+#include <propvarutil.h>
+
+// GLFW
+#include <GLFW/glfw3native.h>
+
+// Standard library
+#include <cassert>
 #include <iostream>
 
 namespace rap {
 
-	RaptorWindow::RaptorWindow(
-		int w,
-		int h,
-		std::string name)
-		: width{ w },
-		height{ h },
-		windowName{ std::move(name) } {
+    namespace {
 
-		initWindow();
-	}
+        constexpr wchar_t RAPTOR_APP_ID[] = L"Doper.Raptor";
 
-	RaptorWindow::~RaptorWindow() {
-		glfwDestroyWindow(window);
-		glfwTerminate();
-	}
+        bool setTaskbarIdentity(GLFWwindow* window) {
+            HWND hwnd = glfwGetWin32Window(window);
 
-	void RaptorWindow::initWindow() {
+            if (hwnd == nullptr) {
+                return false;
+            }
 
-		if (!glfwInit()) {
-			throw std::runtime_error(
-				"OUHHH NOOOO I CANT FIND ME WINDOW (Scottish accent)");
-		}
+            IPropertyStore* propertyStore = nullptr;
 
-		// -------------------------
-		// GLFW window settings
-		// -------------------------
+            HRESULT hr = SHGetPropertyStoreForWindow(
+                hwnd,
+                IID_PPV_ARGS(&propertyStore)
+            );
 
-		glfwWindowHint(
-			GLFW_CLIENT_API,
-			GLFW_NO_API);
+            if (FAILED(hr)) {
+                return false;
+            }
 
-		glfwWindowHint(
-			GLFW_RESIZABLE,
-			GLFW_TRUE);
+            PROPVARIANT appId;
+            PropVariantInit(&appId);
 
-		// -------------------------
-		// Fullscreen
-		// -------------------------
+            hr = InitPropVariantFromString(
+                RAPTOR_APP_ID,
+                &appId
+            );
 
-		GLFWmonitor* monitor =
-			glfwGetPrimaryMonitor();
+            if (SUCCEEDED(hr)) {
+                hr = propertyStore->SetValue(
+                    PKEY_AppUserModel_ID,
+                    appId
+                );
+            }
 
-		if (monitor == nullptr) {
-			throw std::runtime_error(
-				"failed to find primary monitor!");
-		}
+            if (SUCCEEDED(hr)) {
+                hr = propertyStore->Commit();
+            }
 
-		const GLFWvidmode* mode =
-			glfwGetVideoMode(monitor);
+            PropVariantClear(&appId);
+            propertyStore->Release();
 
-		if (mode == nullptr) {
-			throw std::runtime_error(
-				"failed to get monitor video mode!");
-		}
+            return SUCCEEDED(hr);
+        }
 
-		// Create fullscreen window at the monitor's
-		// current resolution and refresh rate.
-		window =
-			glfwCreateWindow(
-				mode->width,
-				mode->height,
-				windowName.c_str(),
-				monitor,
-				nullptr);
+    } // namespace
 
-		if (window == nullptr) {
-			throw std::runtime_error("failed to create GLFW window!");
-		}
+    RaptorWindow::RaptorWindow(
+        int w,
+        int h,
+        std::string name
+    )
+        : width{ w },
+        height{ h },
+        windowName{ name } {
+        initWindow();
+    }
 
-		std::cout << "Fullscreen monitor: "
-			<< glfwGetWindowMonitor(window) << '\n';
+    RaptorWindow::~RaptorWindow() {
+        glfwDestroyWindow(window);
+        glfwTerminate();
+    }
 
-		std::cout << "Window size: "
-			<< width << " x " << height << '\n';
+    void RaptorWindow::initWindow() {
+        glfwInit();
 
-		if (window == nullptr) {
-			throw std::runtime_error(
-				"failed to create GLFW window!");
-		}
+        glfwWindowHint(
+            GLFW_CLIENT_API,
+            GLFW_NO_API
+        );
 
-		// Update our stored dimensions.
-		width = mode->width;
-		height = mode->height;
+        glfwWindowHint(
+            GLFW_RESIZABLE,
+            GLFW_TRUE
+        );
 
-		// -------------------------
-		// Mouse
-		// -------------------------
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 
-		// Hide and capture the mouse cursor.
-		glfwSetInputMode(
-			window,
-			GLFW_CURSOR,
-			GLFW_CURSOR_DISABLED);
+        assert(monitor != nullptr && "Failed to get primary monitor");
 
-		// Use raw mouse input if supported.
-		if (glfwRawMouseMotionSupported()) {
-			glfwSetInputMode(
-				window,
-				GLFW_RAW_MOUSE_MOTION,
-				GLFW_TRUE);
-		}
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
-		// -------------------------
-		// Callbacks
-		// -------------------------
+        assert(mode != nullptr && "Failed to get primary monitor video mode");
 
-		glfwSetWindowUserPointer(
-			window,
-			this);
+        std::cout
+            << "Monitor resolution: "
+            << mode->width << "x" << mode->height
+            << '\n';
 
-		glfwSetFramebufferSizeCallback(
-			window,
-			framebufferResizeCallback);
+        window = glfwCreateWindow(
+            mode->width,
+            mode->height,
+            windowName.c_str(),
+            monitor,
+            nullptr
+        );
 
-		glfwSetKeyCallback(
-			window,
-			keyCallback);
-	}
+        assert(window != nullptr && "Failed to create GLFW window");
 
-	void RaptorWindow::createWindowSurface(
-		VkInstance instance,
-		VkSurfaceKHR* surface) {
+        width = mode->width;
+        height = mode->height;
 
-		if (glfwCreateWindowSurface(
-			instance,
-			window,
-			nullptr,
-			surface) != VK_SUCCESS) {
+        // Give the game window the same Windows taskbar identity as the launcher.
+        const bool taskbarIdentitySet = setTaskbarIdentity(window);
 
-			throw std::runtime_error(
-				"failed to create window surface!");
-		}
-	}
+        assert(
+            taskbarIdentitySet &&
+            "Failed to set Raptor taskbar identity"
+        );
 
-	VkExtent2D RaptorWindow::getExtent() const {
+        glfwSetInputMode(
+            window,
+            GLFW_CURSOR,
+            GLFW_CURSOR_DISABLED
+        );
 
-		int framebufferWidth;
-		int framebufferHeight;
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(
+                window,
+                GLFW_RAW_MOUSE_MOTION,
+                GLFW_TRUE
+            );
+        }
 
-		glfwGetFramebufferSize(
-			window,
-			&framebufferWidth,
-			&framebufferHeight);
+        glfwSetWindowUserPointer(
+            window,
+            this
+        );
 
-		return {
-			static_cast<uint32_t>(framebufferWidth),
-			static_cast<uint32_t>(framebufferHeight)
-		};
-	}
+        glfwSetFramebufferSizeCallback(
+            window,
+            framebufferResizeCallback
+        );
 
-	bool RaptorWindow::shouldClose() {
-		return glfwWindowShouldClose(window);
-	}
+        std::cout
+            << "Window created: "
+            << width << "x" << height
+            << '\n';
+    }
 
-	void RaptorWindow::pollEvents() {
-		glfwPollEvents();
-	}
+    VkResult RaptorWindow::createWindowSurface(
+        VkInstance instance,
+        VkSurfaceKHR* surface
+    ) {
+        return glfwCreateWindowSurface(
+            instance,
+            window,
+            nullptr,
+            surface
+        );
+    }
 
-	bool RaptorWindow::wasWindowResized() const {
-		return framebufferResized;
-	}
+    VkExtent2D RaptorWindow::getExtent() {
+        return {
+            static_cast<uint32_t>(width),
+            static_cast<uint32_t>(height)
+        };
+    }
 
-	void RaptorWindow::resetWindowResizedFlag() {
-		framebufferResized = false;
-	}
+    bool RaptorWindow::shouldClose() {
+        return glfwWindowShouldClose(window);
+    }
 
-	GLFWwindow* RaptorWindow::getGLFWwindow() const {
-		return window;
-	}
+    void RaptorWindow::pollEvents() {
+        glfwPollEvents();
+    }
 
-	void RaptorWindow::framebufferResizeCallback(
-		GLFWwindow* window,
-		int width,
-		int height) {
+    bool RaptorWindow::wasWindowResized() {
+        return framebufferResized;
+    }
 
-		auto windowObject =
-			reinterpret_cast<RaptorWindow*>(
-				glfwGetWindowUserPointer(window));
+    void RaptorWindow::resetWindowResizedFlag() {
+        framebufferResized = false;
+    }
 
-		windowObject->framebufferResized = true;
+    GLFWwindow* RaptorWindow::getGLFWwindow() const {
+        return window;
+    }
 
-		windowObject->width = width;
-		windowObject->height = height;
-	}
+    void RaptorWindow::framebufferResizeCallback(
+        GLFWwindow* window,
+        int width,
+        int height
+    ) {
+        auto raptorWindow = static_cast<RaptorWindow*>(
+            glfwGetWindowUserPointer(window)
+            );
 
-	void RaptorWindow::keyCallback(
-		GLFWwindow* window,
-		int key,
-		int scancode,
-		int action,
-		int mods) {
-
-		if (key == GLFW_KEY_ESCAPE &&
-			action == GLFW_PRESS) {
-
-			glfwSetWindowShouldClose(
-				window,
-				GLFW_TRUE);
-		}
-	}
+        raptorWindow->framebufferResized = true;
+        raptorWindow->width = width;
+        raptorWindow->height = height;
+    }
 
 } // namespace rap

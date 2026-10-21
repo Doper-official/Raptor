@@ -57,3 +57,8 @@ __pycache__/
 
 # compiled spv
 *.spv
+# Java classes and generated shader binaries
+/java/out/
+/shaders/*.spv
+/Release builds/
+/test builds/

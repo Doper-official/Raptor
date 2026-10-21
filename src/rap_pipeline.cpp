@@ -7,8 +7,6 @@
 #include <iostream>
 #include <stdexcept>
 
-
-
 namespace rap {
 
     RaptorPipeline::RaptorPipeline(
