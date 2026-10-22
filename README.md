@@ -1,75 +1,46 @@
-RAPTOR GAME ENGINE 🫩✌️
+# RAPTOR GAME ENGINE 🫩✌️
 
-A custom, modular game engine built with C++23 and Vulkan, focused on rendering performance, architectural flexibility, and experimentation with unconventional graphics techniques.
+A custom, modular game engine built with **C++23 and Vulkan**, focused on rendering performance, architectural flexibility, and experimentation with unconventional graphics techniques.
 
-Features
+## Features
+- **Renderer:** Custom Vulkan rendering engine
+- **Rendering Architecture:** Custom rendering systems, with deferred rendering in development
+- **C++ Standard:** C++23
+- **Windowing and Game Input:** GLFW
+- **Object Loading:** Wavefront `.obj` files using TinyOBJLoader
+- **Math Library:** GLM
+- **Shader Compilation:** Vulkan SDK / `glslc`
+- **Build System:** CMake
+- **Architecture:** Modular native engine designed for library-based integration
+- **Java Integration:** Java-based control system with native C++ interoperability planned
 
-Renderer: Custom Vulkan rendering engine
+## Tech Stack
+- **Languages:** C++23, C, Java, CMake
+- **Graphics API:** Vulkan
+- **Windowing and Input:** GLFW
+- **Math Library:** GLM
+- **Model Loading:** TinyOBJLoader
+- **Build System:** CMake
+- **Shader Compiler:** `glslc`
+- **Native Interoperability:** Java Foreign Function and Memory API (FFM)
 
-Rendering Architecture: Custom rendering systems with deferred-rendering development underway
+## Aim
+- Build a custom, modular, high-performance game engine.
+- Develop a flexible rendering architecture for experimenting with different graphics techniques.
+- Explore deferred rendering, advanced lighting, ray tracing, and other rendering methods.
+- Turn engine components into reusable native libraries.
+- Develop a Java-based control system that interacts with native C++ components.
+- Experiment with custom memory management and efficient native resource handling.
+- Optimize performance while maintaining compatibility with the intended target hardware.
+- Open-source the project under clearly defined licensing terms.
 
-C++ Standard: C++23
+## Status
+- **WIP** — Work in Progress.
+- Architecture, features, and APIs are subject to change.
 
-Windowing & Input: GLFW
+## Extras
+If the chosen license does not explicitly specify otherwise, the following additional usage condition is intended to apply:
 
-Model Loading: Wavefront .obj files using TinyOBJLoader
+- You are allowed to use Raptor in your own projects, including commercial projects, provided that **Raptor is properly credited**.
 
-Math: GLM
-
-Build System: CMake
-
-Shaders: Custom Vulkan shaders compiled using glslc
-
-Architecture: Modular native engine designed for future library-based integration
-
-Java Integration: Planned Java-based control system using native C++ components
-
-Tech Stack
-
-Languages: C++23, C, CMake
-
-Graphics API: Vulkan
-
-Windowing & Input: GLFW
-
-Mathematics: GLM
-
-Model Loading: TinyOBJLoader
-
-Build System: CMake
-
-Shader Compilation: Vulkan SDK / glslc
-
-Java Integration: Java with the Foreign Function & Memory API (FFM), planned for native interoperability
-
-Goals
-
-Build a custom, modular, high-performance game engine.
-
-Develop a flexible rendering architecture that supports experimentation with different rendering techniques.
-
-Explore deferred rendering, lighting systems, ray tracing, and other graphics techniques.
-
-Evolve the engine into reusable native libraries.
-
-Develop a Java-based control layer that can interact with native engine components.
-
-Experiment with custom memory-management systems and efficient native resource handling.
-
-Maintain compatibility with the intended target hardware while pursuing rendering performance.
-
-Release the project as open source under clearly defined licensing terms.
-
-Project Status
-
-WIP — Work in Progress
-
-Raptor is actively under development. Features, architecture, APIs, and implementation details may change as development progresses.
-
-Additional Usage Terms
-
-Unless the project's chosen license explicitly states otherwise, the following additional condition is intended to apply:
-
-You may use this project in your own projects, including commercial projects, provided that Raptor is properly credited.
-
-These additional terms are a statement of intent and do not replace the need for a clearly defined license. The final permissions and obligations depend on the license included with the repository.
+**Note:** The final usage permissions and obligations depend on the actual license included in the repository. Any additional attribution requirements must be compatible with that license.
