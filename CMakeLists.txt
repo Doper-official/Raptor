@@ -6,7 +6,7 @@ project(Raptor LANGUAGES C CXX)
 # Language standards
 # ============================================================
 
-set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
@@ -29,7 +29,7 @@ file(MAKE_DIRECTORY "${RAPTOR_RELEASE_DIR}")
 # Vulkan SDK
 # ============================================================
 
-if(DEFINED ENV{VULKAN_SDK})
+if(DEFINED ENV{VULKAN_SDK} AND NOT "$ENV{VULKAN_SDK}" STREQUAL "")
     set(VULKAN_SDK "$ENV{VULKAN_SDK}")
 else()
     set(VULKAN_SDK "F:/Vulkan")
@@ -49,48 +49,40 @@ if(Java_FOUND)
 else()
     message(WARNING
         "Java Development Kit 22+ not found. "
-        "Java compilation disabled."
+        "Java compilation is disabled."
     )
 endif()
 
-set(JAVA_SOURCES
+set(RAPTOR_JAVA_SOURCES
     "${RAPTOR_ROOT}/java/Main.java"
     "${RAPTOR_ROOT}/java/Raptor.java"
 )
 
-set(JAVA_OUTPUT_DIR "${RAPTOR_TEST_DIR}/java")
+set(RAPTOR_JAVA_DEBUG_DIR "${RAPTOR_TEST_DIR}/java")
+set(RAPTOR_JAVA_RELEASE_DIR "${RAPTOR_RELEASE_DIR}/java")
 
-if(Java_FOUND)
-    if(EXISTS "${RAPTOR_ROOT}/java/Main.java"
-       AND EXISTS "${RAPTOR_ROOT}/java/Raptor.java")
+if(
+    Java_FOUND
+    AND EXISTS "${RAPTOR_ROOT}/java/Main.java"
+    AND EXISTS "${RAPTOR_ROOT}/java/Raptor.java"
+)
+    add_custom_target(JavaApp
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "$<IF:$<CONFIG:Debug>,${RAPTOR_JAVA_DEBUG_DIR},${RAPTOR_JAVA_RELEASE_DIR}>"
 
-        add_custom_command(
-            OUTPUT "${JAVA_OUTPUT_DIR}/Main.class"
+        COMMAND "${Java_JAVAC_EXECUTABLE}"
+            -d "$<IF:$<CONFIG:Debug>,${RAPTOR_JAVA_DEBUG_DIR},${RAPTOR_JAVA_RELEASE_DIR}>"
+            ${RAPTOR_JAVA_SOURCES}
 
-            COMMAND "${CMAKE_COMMAND}" -E make_directory
-                    "${JAVA_OUTPUT_DIR}"
-
-            COMMAND "${Java_JAVAC_EXECUTABLE}"
-                    -d "${JAVA_OUTPUT_DIR}"
-                    ${JAVA_SOURCES}
-
-            DEPENDS ${JAVA_SOURCES}
-
-            WORKING_DIRECTORY "${RAPTOR_ROOT}"
-            COMMENT "Compiling Raptor Java sources"
-            VERBATIM
-        )
-
-        add_custom_target(JavaApp
-            DEPENDS "${JAVA_OUTPUT_DIR}/Main.class"
-        )
-
-    else()
-        message(WARNING
-            "Java sources not found at java/Main.java and java/Raptor.java. "
-            "Java compilation target disabled."
-        )
-    endif()
+        DEPENDS ${RAPTOR_JAVA_SOURCES}
+        WORKING_DIRECTORY "${RAPTOR_ROOT}"
+        COMMENT "Compiling Raptor Java sources for $<CONFIG>"
+        VERBATIM
+    )
+elseif(Java_FOUND)
+    message(WARNING
+        "Java sources missing. Expected java/Main.java and java/Raptor.java."
+    )
 endif()
 
 # ============================================================
@@ -102,6 +94,7 @@ include(FetchContent)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     glfw
@@ -135,7 +128,10 @@ set(SHADER_SCRIPT "${RAPTOR_ROOT}/shaders/compileShaders.bat")
 
 if(WIN32 AND EXISTS "${SHADER_SCRIPT}")
     add_custom_target(CompileShaders
-        COMMAND cmd /c "${SHADER_SCRIPT}"
+        COMMAND
+            "${CMAKE_COMMAND}" -E env
+            cmd /c
+            "${SHADER_SCRIPT}"
         WORKING_DIRECTORY "${RAPTOR_ROOT}"
         COMMENT "Compiling Vulkan shaders"
         VERBATIM
@@ -151,8 +147,7 @@ endif()
 # ============================================================
 
 add_library(raptor SHARED
-
-    #src
+    # Core
     src/raptor_api.cpp
     src/first_app.cpp
     src/rap_window.cpp
@@ -168,12 +163,12 @@ add_library(raptor SHARED
     src/rap_image.cpp
     src/keyboard_movement_controller.cpp
 
-    #systems
+    # Systems
     src/systems/point_light_system.cpp
     src/systems/simple_render_system.cpp
     src/systems/deferred_lighting_system.cpp
 
-    #buffers
+    # Buffers
     src/buffers/rap_geometry_buffer.cpp
 )
 
@@ -198,7 +193,6 @@ if(WIN32)
             NOMINMAX
     )
 
-    # Windows taskbar identity support.
     target_link_libraries(raptor
         PRIVATE
             shell32
@@ -215,68 +209,93 @@ if(TARGET JavaApp)
     add_dependencies(raptor JavaApp)
 endif()
 
-# Output directories for the engine DLL.
 set_target_properties(raptor PROPERTIES
+    OUTPUT_NAME "raptor"
+
     RUNTIME_OUTPUT_DIRECTORY_DEBUG
         "${RAPTOR_TEST_DIR}"
-
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE
-        "${RAPTOR_RELEASE_DIR}"
 
     LIBRARY_OUTPUT_DIRECTORY_DEBUG
         "${RAPTOR_TEST_DIR}"
 
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE
-        "${RAPTOR_RELEASE_DIR}"
-
     ARCHIVE_OUTPUT_DIRECTORY_DEBUG
         "${RAPTOR_TEST_DIR}/lib"
+
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE
+        "${RAPTOR_RELEASE_DIR}"
+
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE
+        "${RAPTOR_RELEASE_DIR}"
 
     ARCHIVE_OUTPUT_DIRECTORY_RELEASE
         "${RAPTOR_RELEASE_DIR}/lib"
 )
 
 # ============================================================
-# C launcher for Raptor-Test.jar
+# C launcher
 # ============================================================
 
-if(WIN32)
-    if(EXISTS "${RAPTOR_ROOT}/C/launcher.c")
+if(WIN32 AND EXISTS "${RAPTOR_ROOT}/C/launcher.c")
 
-        add_executable(RaptorJarLauncher WIN32
-            C/launcher.c
-        )
+    add_executable(RaptorJarLauncher
+        C/launcher.c
+    )
 
-        target_link_libraries(RaptorJarLauncher
-            PRIVATE
-                user32
-                shell32
-        )
+    # Keep the console window because launcher.c uses wmain.
+    set_target_properties(RaptorJarLauncher PROPERTIES
+        WIN32_EXECUTABLE FALSE
 
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG
+            "${RAPTOR_TEST_DIR}"
+
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE
+            "${RAPTOR_RELEASE_DIR}"
+    )
+
+    target_link_libraries(RaptorJarLauncher
+        PRIVATE
+            user32
+            shell32
+    )
+
+    if(MSVC)
         target_compile_options(RaptorJarLauncher
             PRIVATE
                 /W4
                 $<$<CONFIG:Release>:/O2>
         )
-
-        # Each Visual Studio configuration gets its own output path.
-        set_target_properties(RaptorJarLauncher PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY_DEBUG
-                "${RAPTOR_TEST_DIR}"
-
-            RUNTIME_OUTPUT_DIRECTORY_RELEASE
-                "${RAPTOR_RELEASE_DIR}"
-        )
-
-        # Build the launcher whenever the engine is built.
-        add_dependencies(raptor RaptorJarLauncher)
-
-    else()
-        message(WARNING
-            "C/launcher.c not found. "
-            "RaptorJarLauncher target disabled."
-        )
     endif()
+
+    # Build the launcher whenever the engine is built.
+    add_dependencies(raptor RaptorJarLauncher)
+
+    # Copy models and shaders beside the launcher.
+    # The launcher and DLL use these relative asset directories.
+    foreach(asset_dir IN ITEMS models shaders)
+        if(EXISTS "${RAPTOR_ROOT}/${asset_dir}")
+            add_custom_command(
+                TARGET RaptorJarLauncher
+                POST_BUILD
+
+                COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                    "${RAPTOR_ROOT}/${asset_dir}"
+                    "$<TARGET_FILE_DIR:RaptorJarLauncher>/${asset_dir}"
+
+                COMMENT "Copying ${asset_dir} beside RaptorJarLauncher"
+                VERBATIM
+            )
+        else()
+            message(WARNING
+                "Asset source directory not found: "
+                "${RAPTOR_ROOT}/${asset_dir}"
+            )
+        endif()
+    endforeach()
+
+else()
+    message(WARNING
+        "C/launcher.c not found. RaptorJarLauncher target disabled."
+    )
 endif()
 
 # ============================================================
@@ -288,7 +307,7 @@ message(STATUS "Raptor Engine Configuration")
 message(STATUS "========================================")
 message(STATUS "Root: ${RAPTOR_ROOT}")
 message(STATUS "Vulkan SDK: ${VULKAN_SDK}")
-message(STATUS "Test output: ${RAPTOR_TEST_DIR}")
+message(STATUS "Debug output: ${RAPTOR_TEST_DIR}")
 message(STATUS "Release output: ${RAPTOR_RELEASE_DIR}")
-message(STATUS "C launcher source: ${RAPTOR_ROOT}/C/launcher.c")
+message(STATUS "Launcher: ${RAPTOR_ROOT}/C/launcher.c")
 message(STATUS "========================================")

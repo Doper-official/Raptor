@@ -22,23 +22,27 @@ namespace rap {
 
         ~PointLightSystem();
 
-        PointLightSystem(
-            const PointLightSystem&) = delete;
-
-        PointLightSystem& operator=(
-            const PointLightSystem&) = delete;
+        PointLightSystem(const PointLightSystem&) = delete;
+        PointLightSystem& operator=(const PointLightSystem&) = delete;
 
         void update(FrameInfo& frameInfo, GlobalUbo& ubo);
 
-        void render(
-            FrameInfo& frameInfo);
+        // Bind the current frame's G-buffer depth image.
+        void updateDepthDescriptorSet(
+            uint32_t frameIndex,
+            VkImageView depthImageView);
+
+        void render(FrameInfo& frameInfo);
 
     private:
 
-        void createPipelineLayout(VkDescriptorSetLayout globalSetLayout);
+        void createDepthSampler();
+        void createDepthDescriptorResources();
 
-        void createPipeline(
-            VkRenderPass renderPass);
+        void createPipelineLayout(
+            VkDescriptorSetLayout globalSetLayout);
+
+        void createPipeline(VkRenderPass renderPass);
 
         RaptorDevice& device;
 
@@ -46,6 +50,17 @@ namespace rap {
 
         VkPipelineLayout pipelineLayout =
             VK_NULL_HANDLE;
+
+        VkDescriptorSetLayout depthSetLayout =
+            VK_NULL_HANDLE;
+
+        VkDescriptorPool depthDescriptorPool =
+            VK_NULL_HANDLE;
+
+        VkSampler depthSampler =
+            VK_NULL_HANDLE;
+
+        std::vector<VkDescriptorSet> depthDescriptorSets;
     };
 
 } // namespace rap

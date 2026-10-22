@@ -1,0 +1,17 @@
+# Use a console subsystem while debugging so wmain() and logs work.
+# Merge this target definition with your existing CMakeLists.txt target setup.
+add_executable(RaptorJarLauncher
+    C/launcher.c
+)
+
+set_target_properties(RaptorJarLauncher PROPERTIES
+    WIN32_EXECUTABLE FALSE
+    C_STANDARD 11
+    C_STANDARD_REQUIRED YES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/Release builds"
+)
+
+# If your CMake project uses per-configuration output paths, also set:
+set_target_properties(RaptorJarLauncher PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/Release builds"
+)

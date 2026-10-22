@@ -9,9 +9,10 @@
 #include "rap_window.hpp"
 #include "rap_buffer.hpp"
 
-// glm
+// GLM
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -53,7 +54,7 @@ namespace rap {
 
         std::cout << "running raptor v0.0.2" << std::endl;
 
-        // Create one uniform buffer per frame in flight.
+        // One uniform buffer per frame in flight.
         std::vector<std::unique_ptr<RapBuffer>> uboBuffers(
             RaptorSwapChain::MAX_FRAMES_IN_FLIGHT
         );
@@ -71,7 +72,7 @@ namespace rap {
             uboBuffers[i]->map();
         }
 
-        // Allocate descriptor sets after creating the buffers.
+        // Allocate the global descriptor sets.
         std::vector<VkDescriptorSet> globalDescriptorSets(
             RaptorSwapChain::MAX_FRAMES_IN_FLIGHT
         );
@@ -88,18 +89,21 @@ namespace rap {
             writer.build(globalDescriptorSets[i]);
         }
 
+        // Geometry pass: writes albedo, normal, and depth.
         SimpleRenderSystem simpleRenderSystem{
             device,
             rapRenderer.getGeometryRenderPass(),
             globalSetLayout->getDescriptorSetLayout()
         };
 
+        // Billboard pass: draws light markers into the swapchain.
         PointLightSystem pointLightSystem{
             device,
             rapRenderer.getSwapChainRenderPass(),
             globalSetLayout->getDescriptorSetLayout()
         };
 
+        // Deferred pass: shades the G-buffer into the swapchain.
         DeferredLightingSystem deferredLightingSystem{
             device,
             rapRenderer.getSwapChainRenderPass(),
@@ -120,7 +124,8 @@ namespace rap {
 
         KeyboardMovementController cameraController{};
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto currentTime =
+            std::chrono::high_resolution_clock::now();
 
         while (!window.shouldClose()) {
             glfwPollEvents();
@@ -135,7 +140,8 @@ namespace rap {
                 );
             }
 
-            auto newTime = std::chrono::high_resolution_clock::now();
+            auto newTime =
+                std::chrono::high_resolution_clock::now();
 
             float frameTime =
                 std::chrono::duration<float>(
@@ -146,6 +152,7 @@ namespace rap {
 
             frameTime = glm::min(frameTime, MAX_FRAME_TIME);
 
+            // Camera movement.
             cameraController.moveInPlaneXZ(
                 window.getGLFWwindow(),
                 frameTime,
@@ -157,7 +164,8 @@ namespace rap {
                 viewerObject.transform.rotation
             );
 
-            float aspect = rapRenderer.getAspectRatio();
+            // Camera projection.
+            const float aspect = rapRenderer.getAspectRatio();
 
             camera.setPerspectiveProjection(
                 glm::radians(50.f),
@@ -167,63 +175,86 @@ namespace rap {
             );
 
             if (auto commandBuffer = rapRenderer.beginFrame()) {
-                int frameIndex = rapRenderer.getFrameIndex();
+                const int frameIndex =
+                    rapRenderer.getFrameIndex();
+
+                assert(frameIndex >= 0);
+                assert(
+                    static_cast<size_t>(frameIndex) <
+                    uboBuffers.size()
+                );
 
                 FrameInfo frameInfo{
                     frameIndex,
                     frameTime,
                     commandBuffer,
                     camera,
-					globalDescriptorSets[frameIndex],
+                    globalDescriptorSets[frameIndex],
                     gameObjects
                 };
 
-                // Update the uniform buffer... dont look here; HOW DARE YOU 
+                // Update the global UBO.
                 GlobalUbo ubo{};
-                ubo.projection =
-                    camera.getProjection();
-				ubo.view = camera.getView();
 
+                ubo.projection = camera.getProjection();
+                ubo.view = camera.getView();
                 ubo.inverseView = camera.getInverseView();
 
                 pointLightSystem.update(frameInfo, ubo);
 
                 uboBuffers[frameIndex]->writeToBuffer(&ubo);
 
-                // Refresh this frame's G-buffer descriptors. beginFrame() has
-                // waited for this frame slot, so its descriptor set is safe to update.
+                // Update deferred-lighting descriptors for this frame.
                 deferredLightingSystem.updateDescriptorSet(
                     frameIndex,
-                    rapRenderer.getCurrentGeometryBuffer());
+                    rapRenderer.getCurrentGeometryBuffer()
+                );
 
-                // PASS 1: write surface data into the G-buffer.
+                // Bind this frame's G-buffer depth image to the
+                // point-light fragment shader.
+                pointLightSystem.updateDepthDescriptorSet(
+                    static_cast<uint32_t>(frameIndex),
+                    rapRenderer
+                    .getCurrentGeometryBuffer()
+                    .getDepthImageView()
+                );
+
+                // PASS 1:
+                // Render scene geometry into the G-buffer.
                 rapRenderer.beginGeometryPass(commandBuffer);
+
                 simpleRenderSystem.renderGameObjects(frameInfo);
+
                 rapRenderer.endGeometryPass(commandBuffer);
 
-                // PASS 2: shade the G-buffer into the swapchain.
+                // PASS 2:
+                // Shade the G-buffer and draw depth-tested billboards.
                 rapRenderer.beginSwapChainRenderPass(commandBuffer);
+
                 deferredLightingSystem.render(frameInfo);
 
-                // Keep the light billboards visible on top of the deferred scene.
                 pointLightSystem.render(frameInfo);
+
                 rapRenderer.endSwapChainRenderPass(commandBuffer);
 
                 rapRenderer.endFrame();
-                
             }
         }
+
+        vkDeviceWaitIdle(device.device());
     }
 
     void RaptorFirstApp::loadGameObjects() {
+
         std::shared_ptr<RaptorModel> smooth_vaseModel =
             RaptorModel::createModelFromFile(
                 device,
                 "models/smooth_vase.objmodel"
             );
 
-        //vase 1
-        auto smooth_vase = RaptorGameObject::createGameObject();
+        // Vase 1.
+        auto smooth_vase =
+            RaptorGameObject::createGameObject();
 
         smooth_vase.model = smooth_vaseModel;
 
@@ -232,31 +263,32 @@ namespace rap {
         };
 
         smooth_vase.transform.scale = glm::vec3{ 1.f };
+        smooth_vase.color = { 1.f, 0.f, 0.f };
 
-        smooth_vase.color = {
-            1.f, 0.f, 0.f
-        };
+        gameObjects.emplace(
+            smooth_vase.getId(),
+            std::move(smooth_vase)
+        );
 
-        gameObjects.emplace(smooth_vase.getId(), std::move(smooth_vase));
-
-        //vase 2
-        auto smooth_vase1 = RaptorGameObject::createGameObject();
+        // Vase 2.
+        auto smooth_vase1 =
+            RaptorGameObject::createGameObject();
 
         smooth_vase1.model = smooth_vaseModel;
 
         smooth_vase1.transform.translation = {
-            -0.25f, 0.25f, -.5f
+            -0.25f, 0.25f, -0.5f
         };
 
         smooth_vase1.transform.scale = glm::vec3{ 1.f };
+        smooth_vase1.color = { 1.f, 0.f, 0.f };
 
-        smooth_vase1.color = {
-            1.f, 0.f, 0.f
-        };
+        gameObjects.emplace(
+            smooth_vase1.getId(),
+            std::move(smooth_vase1)
+        );
 
-        gameObjects.emplace(smooth_vase1.getId(), std::move(smooth_vase1));
-
-        // teh ground floor thingy
+        // Ground floor.
         std::shared_ptr<RaptorModel> floorModel =
             RaptorModel::createModelFromFile(
                 device,
@@ -268,37 +300,57 @@ namespace rap {
         floor.model = floorModel;
 
         floor.transform.translation = {
-            0.f, 0.25f, -.5f
+            0.f, 0.25f, -0.5f
         };
 
-        floor.transform.scale = glm::vec3{ 3.f, 1.f, 3.f };
+        floor.transform.scale =
+            glm::vec3{ 3.f, 1.f, 3.f };
 
-        floor.color = {
-            1.f, 0.f, 0.f
-        };
+        floor.color = { 1.f, 0.f, 0.f };
 
-        gameObjects.emplace(floor.getId(), std::move(floor));
+        gameObjects.emplace(
+            floor.getId(),
+            std::move(floor)
+        );
 
+        // Point lights.
         std::vector<glm::vec3> lightColors{
-            {1.f, .1f, .1f},
-            {.1f, .1f, 1.f},
-            {.1f, 1.f, .1f},
-            {1.f, 1.f, .1f},
-            {.1f, 1.f, 1.f},
-            {1.f, 1.f, 1.f}  //clors
+            { 1.f, .1f, .1f },
+            { .1f, .1f, 1.f },
+            { .1f, 1.f, .1f },
+            { 1.f, 1.f, .1f },
+            { .1f, 1.f, 1.f },
+            { 1.f, 1.f, 1.f }
         };
 
-        for (int i = 0; i < lightColors.size(); i++) {
-            auto pointLight = RaptorGameObject::makePointLight(.2f);
+        for (int i = 0;
+            i < static_cast<int>(lightColors.size());
+            ++i) {
+
+            auto pointLight =
+                RaptorGameObject::makePointLight(.2f);
+
             pointLight.color = lightColors[i];
+
             auto rotateLight = glm::rotate(
                 glm::mat4(1.f),
-                (static_cast<float>(i) * glm::two_pi<float>()) /
-                static_cast<float>(lightColors.size()),
+                (
+                    static_cast<float>(i) *
+                    glm::two_pi<float>()
+                    ) / static_cast<float>(lightColors.size()),
                 glm::vec3{ 0.f, -1.f, 0.f }
             );
-            pointLight.transform.translation = glm::vec3(rotateLight * glm::vec4(-1.f, -1.f, -1.f, -1.f));
-            gameObjects.emplace(pointLight.getId(), std::move(pointLight));
+
+            pointLight.transform.translation = glm::vec3(
+                rotateLight *
+                glm::vec4(-1.f, -1.f, -1.f, -1.f)
+            );
+
+            gameObjects.emplace(
+                pointLight.getId(),
+                std::move(pointLight)
+            );
         }
     }
+
 } // namespace rap
