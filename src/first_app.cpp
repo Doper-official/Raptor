@@ -249,7 +249,7 @@ namespace rap {
         std::shared_ptr<RaptorModel> smooth_vaseModel =
             RaptorModel::createModelFromFile(
                 device,
-                "models/smooth_vase.objmodel"
+                "models/smooth_vase.glb"
             );
 
         // Vase 1.
@@ -292,7 +292,7 @@ namespace rap {
         std::shared_ptr<RaptorModel> floorModel =
             RaptorModel::createModelFromFile(
                 device,
-                "models/quad.objmodel"
+                "models/quad.glb"
             );
 
         auto floor = RaptorGameObject::createGameObject();

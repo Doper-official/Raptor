@@ -6,7 +6,7 @@ project(Raptor LANGUAGES C CXX)
 # Language standards
 # ============================================================
 
-set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
@@ -19,11 +19,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ============================================================
 
 set(RAPTOR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
-set(RAPTOR_TEST_DIR "${RAPTOR_ROOT}/test builds")
+set(RAPTOR_TEST_DIR "${RAPTOR_ROOT}/Test builds")
 set(RAPTOR_RELEASE_DIR "${RAPTOR_ROOT}/Release builds")
 
-file(MAKE_DIRECTORY "${RAPTOR_TEST_DIR}")
-file(MAKE_DIRECTORY "${RAPTOR_RELEASE_DIR}")
+file(MAKE_DIRECTORY
+    "${RAPTOR_TEST_DIR}"
+    "${RAPTOR_RELEASE_DIR}"
+)
 
 # ============================================================
 # Vulkan SDK
@@ -67,16 +69,22 @@ if(
     AND EXISTS "${RAPTOR_ROOT}/java/Raptor.java"
 )
     add_custom_target(JavaApp
-        COMMAND "${CMAKE_COMMAND}" -E make_directory
+        COMMAND
+            "${CMAKE_COMMAND}" -E make_directory
             "$<IF:$<CONFIG:Debug>,${RAPTOR_JAVA_DEBUG_DIR},${RAPTOR_JAVA_RELEASE_DIR}>"
 
-        COMMAND "${Java_JAVAC_EXECUTABLE}"
+        COMMAND
+            "${Java_JAVAC_EXECUTABLE}"
             -d "$<IF:$<CONFIG:Debug>,${RAPTOR_JAVA_DEBUG_DIR},${RAPTOR_JAVA_RELEASE_DIR}>"
             ${RAPTOR_JAVA_SOURCES}
 
-        DEPENDS ${RAPTOR_JAVA_SOURCES}
+        DEPENDS
+            ${RAPTOR_JAVA_SOURCES}
+
         WORKING_DIRECTORY "${RAPTOR_ROOT}"
+
         COMMENT "Compiling Raptor Java sources for $<CONFIG>"
+
         VERBATIM
     )
 elseif(Java_FOUND)
@@ -91,6 +99,8 @@ endif()
 
 include(FetchContent)
 
+# GLFW
+
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -100,47 +110,110 @@ FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG 3.4
+    GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(glfw)
+# GLM
 
 FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
     GIT_TAG 1.0.1
+    GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(glm)
+# TinyOBJLoader
 
 FetchContent_Declare(
     tinyobjloader
     GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
     GIT_TAG release
+    GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(tinyobjloader)
+# TinyGLTF
+
+set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_GL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG v2.9.5
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(
+    glfw
+    glm
+    tinyobjloader
+    tinygltf
+)
 
 # ============================================================
 # Shader compilation
 # ============================================================
 
-set(SHADER_SCRIPT "${RAPTOR_ROOT}/shaders/compileShaders.bat")
+set(RAPTOR_SHADER_SOURCE_DIR "${RAPTOR_ROOT}/shaders")
+set(SHADER_SCRIPT "${RAPTOR_SHADER_SOURCE_DIR}/compileShaders.bat")
 
-if(WIN32 AND EXISTS "${SHADER_SCRIPT}")
-    add_custom_target(CompileShaders
-        COMMAND
-            "${CMAKE_COMMAND}" -E env
-            cmd /c
-            "${SHADER_SCRIPT}"
-        WORKING_DIRECTORY "${RAPTOR_ROOT}"
-        COMMENT "Compiling Vulkan shaders"
-        VERBATIM
+if(NOT WIN32)
+    message(FATAL_ERROR
+        "Raptor shader compilation currently requires Windows."
     )
-else()
-    message(WARNING
+endif()
+
+if(NOT EXISTS "${SHADER_SCRIPT}")
+    message(FATAL_ERROR
         "Shader compilation script not found: ${SHADER_SCRIPT}"
     )
 endif()
+
+add_custom_target(CompileShaders ALL
+    COMMAND
+        "${CMAKE_COMMAND}" -E env
+        "VULKAN_SDK=${VULKAN_SDK}"
+        cmd /c call "${SHADER_SCRIPT}"
+
+    WORKING_DIRECTORY "${RAPTOR_SHADER_SOURCE_DIR}"
+
+    COMMENT "Compiling Vulkan shaders for Test and Release builds"
+
+    VERBATIM
+)
+
+# ============================================================
+# Model copying
+# ============================================================
+
+set(RAPTOR_MODELS_DIR "${RAPTOR_ROOT}/models")
+set(MODEL_COPY_SCRIPT "${RAPTOR_ROOT}/copyModels.bat")
+
+if(NOT IS_DIRECTORY "${RAPTOR_MODELS_DIR}")
+    message(FATAL_ERROR
+        "Models directory not found: ${RAPTOR_MODELS_DIR}"
+    )
+endif()
+
+if(NOT EXISTS "${MODEL_COPY_SCRIPT}")
+    message(FATAL_ERROR
+        "Model copy script not found: ${MODEL_COPY_SCRIPT}"
+    )
+endif()
+
+add_custom_target(CopyModels ALL
+    COMMAND
+        cmd /c call "${MODEL_COPY_SCRIPT}"
+
+    WORKING_DIRECTORY "${RAPTOR_ROOT}"
+
+    COMMENT "Copying Raptor models to Test and Release builds"
+
+    VERBATIM
+)
 
 # ============================================================
 # Raptor native engine DLL
@@ -163,6 +236,9 @@ add_library(raptor SHARED
     src/rap_image.cpp
     src/keyboard_movement_controller.cpp
 
+    # TinyGLTF implementation
+    src/tinygltf_impl.cpp
+
     # Systems
     src/systems/point_light_system.cpp
     src/systems/simple_render_system.cpp
@@ -183,6 +259,7 @@ target_link_libraries(raptor
         glm::glm
         Vulkan::Vulkan
         tinyobjloader
+        tinygltf
 )
 
 if(WIN32)
@@ -199,11 +276,14 @@ if(WIN32)
             ole32
             propsys
     )
-
-    if(TARGET CompileShaders)
-        add_dependencies(raptor CompileShaders)
-    endif()
 endif()
+
+# Ensure shaders and models are prepared before building the DLL.
+
+add_dependencies(raptor
+    CompileShaders
+    CopyModels
+)
 
 if(TARGET JavaApp)
     add_dependencies(raptor JavaApp)
@@ -236,12 +316,10 @@ set_target_properties(raptor PROPERTIES
 # ============================================================
 
 if(WIN32 AND EXISTS "${RAPTOR_ROOT}/C/launcher.c")
-
     add_executable(RaptorJarLauncher
         C/launcher.c
     )
 
-    # Keep the console window because launcher.c uses wmain.
     set_target_properties(RaptorJarLauncher PROPERTIES
         WIN32_EXECUTABLE FALSE
 
@@ -266,32 +344,12 @@ if(WIN32 AND EXISTS "${RAPTOR_ROOT}/C/launcher.c")
         )
     endif()
 
-    # Build the launcher whenever the engine is built.
+    add_dependencies(RaptorJarLauncher
+        CompileShaders
+        CopyModels
+    )
+
     add_dependencies(raptor RaptorJarLauncher)
-
-    # Copy models and shaders beside the launcher.
-    # The launcher and DLL use these relative asset directories.
-    foreach(asset_dir IN ITEMS models shaders)
-        if(EXISTS "${RAPTOR_ROOT}/${asset_dir}")
-            add_custom_command(
-                TARGET RaptorJarLauncher
-                POST_BUILD
-
-                COMMAND "${CMAKE_COMMAND}" -E copy_directory
-                    "${RAPTOR_ROOT}/${asset_dir}"
-                    "$<TARGET_FILE_DIR:RaptorJarLauncher>/${asset_dir}"
-
-                COMMENT "Copying ${asset_dir} beside RaptorJarLauncher"
-                VERBATIM
-            )
-        else()
-            message(WARNING
-                "Asset source directory not found: "
-                "${RAPTOR_ROOT}/${asset_dir}"
-            )
-        endif()
-    endforeach()
-
 else()
     message(WARNING
         "C/launcher.c not found. RaptorJarLauncher target disabled."
@@ -307,7 +365,13 @@ message(STATUS "Raptor Engine Configuration")
 message(STATUS "========================================")
 message(STATUS "Root: ${RAPTOR_ROOT}")
 message(STATUS "Vulkan SDK: ${VULKAN_SDK}")
+message(STATUS "C standard: C23")
+message(STATUS "C++ standard: C++23")
 message(STATUS "Debug output: ${RAPTOR_TEST_DIR}")
 message(STATUS "Release output: ${RAPTOR_RELEASE_DIR}")
-message(STATUS "Launcher: ${RAPTOR_ROOT}/C/launcher.c")
+message(STATUS "Models source: ${RAPTOR_MODELS_DIR}")
+message(STATUS "Model copy script: ${MODEL_COPY_SCRIPT}")
+message(STATUS "Shader source: ${RAPTOR_SHADER_SOURCE_DIR}")
+message(STATUS "Shader script: ${SHADER_SCRIPT}")
+message(STATUS "Java enabled: ${Java_FOUND}")
 message(STATUS "========================================")

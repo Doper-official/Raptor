@@ -116,53 +116,154 @@ namespace rap {
         hasGflwRequiredInstanceExtensions();
     }
 
+    //updated pick device
     void RaptorDevice::pickPhysicalDevice() {
         uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
-        if (deviceCount == 0) {
+        if (vkEnumeratePhysicalDevices(
+            instance,
+            &deviceCount,
+            nullptr) != VK_SUCCESS ||
+            deviceCount == 0) {
             throw std::runtime_error(
                 "failed to find GPUs with Vulkan support!");
         }
 
         std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(
+
+        if (vkEnumeratePhysicalDevices(
             instance,
             &deviceCount,
-            devices.data());
+            devices.data()) != VK_SUCCESS) {
+            throw std::runtime_error(
+                "failed to enumerate Vulkan physical devices!");
+        }
 
         VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
-        int bestScore = -1;
+        int64_t bestScore = -1;
 
-        for (const auto &device: devices) {
-            VkPhysicalDeviceProperties deviceProperties;
+        for (const auto& device : devices) {
+            VkPhysicalDeviceProperties deviceProperties{};
             vkGetPhysicalDeviceProperties(
                 device,
                 &deviceProperties);
 
-            std::cout << "Found GPU: "
-                    << deviceProperties.deviceName
-                    << std::endl;
+            std::cout << "\nFound GPU: "
+                << deviceProperties.deviceName
+                << '\n';
 
             if (!isDeviceSuitable(device)) {
+                std::cout << "  Rejected: device is not suitable\n";
                 continue;
             }
 
-            int score = 0;
+            // ----------------------------------------------------
+            // 1. Prioritize GPU architecture/type.
+            // ----------------------------------------------------
+
+            int64_t score = 0;
+
+            switch (deviceProperties.deviceType) {
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                score += 1'000'000;
+                break;
+
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                score += 100'000;
+                break;
+
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                score += 50'000;
+                break;
+
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                score += 10'000;
+                break;
+
+            default:
+                score += 1'000;
+                break;
+            }
+
+            // ----------------------------------------------------
+            // 2. Prefer GPUs with more dedicated local memory.
+            // ----------------------------------------------------
+
+            VkPhysicalDeviceMemoryProperties memoryProperties{};
+
+            vkGetPhysicalDeviceMemoryProperties(
+                device,
+                &memoryProperties);
+
+            VkDeviceSize localMemoryBytes = 0;
+
+            for (uint32_t i = 0;
+                i < memoryProperties.memoryHeapCount;
+                ++i) {
+                const auto& heap = memoryProperties.memoryHeaps[i];
+
+                if (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                    localMemoryBytes += heap.size;
+                }
+            }
+
+            const uint64_t localMemoryMiB =
+                localMemoryBytes / (1024ULL * 1024ULL);
+
+            // Small contribution: memory size must not outweigh
+            // the preference for a discrete GPU.
+            score += static_cast<int64_t>(
+                std::min<uint64_t>(localMemoryMiB, 1'000'000ULL) / 16ULL);
+
+            // ----------------------------------------------------
+            // 3. NVIDIA tie-breaker.
+            // ----------------------------------------------------
+
             if (deviceProperties.vendorID == 0x10DE) {
-                score += 10000;
+                score += 5'000;
             }
 
-            if (deviceProperties.deviceType ==
-                VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-                score += 1000;
+            // ----------------------------------------------------
+            // 4. Use image dimension capability as another factor.
+            // ----------------------------------------------------
+
+            score += static_cast<int64_t>(
+                deviceProperties.limits.maxImageDimension2D);
+
+            std::cout << "  Device type: ";
+
+            switch (deviceProperties.deviceType) {
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                std::cout << "Discrete GPU";
+                break;
+
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                std::cout << "Integrated GPU";
+                break;
+
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                std::cout << "Virtual GPU";
+                break;
+
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                std::cout << "CPU";
+                break;
+
+            default:
+                std::cout << "Other";
+                break;
             }
 
-            score += deviceProperties.limits.maxImageDimension2D;
+            std::cout << "\n  Device-local memory: "
+                << localMemoryMiB
+                << " MiB"
+                << "\n  Score: "
+                << score
+                << '\n';
 
-            std::cout << "  Score: "
-                    << score
-                    << std::endl;
+            // ----------------------------------------------------
+            // 5. Select the highest-scoring suitable device.
+            // ----------------------------------------------------
 
             if (score > bestScore) {
                 bestScore = score;
@@ -181,9 +282,11 @@ namespace rap {
             physicalDevice,
             &properties);
 
-        std::cout << "Selected GPU: "
-                << properties.deviceName
-                << std::endl;
+        std::cout << "\nSelected GPU: "
+            << properties.deviceName
+            << "\nSelected GPU score: "
+            << bestScore
+            << '\n';
     }
 
     void RaptorDevice::createLogicalDevice() {
