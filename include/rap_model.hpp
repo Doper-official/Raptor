@@ -6,7 +6,8 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
-#include "rap_buffer.hpp"
+#include "buffers/rap_buffer.hpp"
+#include "rap_image.hpp"
 
 // std
 #include <memory>
@@ -38,9 +39,28 @@ namespace rap {
             }
         };
 
+        struct TextureData {
+            uint32_t width = 0;
+            uint32_t height = 0;
+            std::vector<unsigned char> pixels;
+        };
+
+        struct Primitive {
+            uint32_t firstIndex = 0;
+            uint32_t indexCount = 0;
+            int32_t materialIndex = -1;
+        };
+
+        struct Material {
+            int32_t baseColorTextureIndex = -1;
+        };
+
         struct Builder {
             std::vector<Vertex> vertices{};
             std::vector<uint32_t> indices{};
+            std::vector<TextureData> textures{};
+            std::vector<Primitive> primitive{};
+            std::vector<Material> materials{};
 
             void loadModel(
                 const std::string& filepath);
@@ -67,6 +87,26 @@ namespace rap {
         void draw(
             VkCommandBuffer commandBuffer);
 
+		const std::vector<Primitive>& getPrimitives() const {
+			return primitives;
+		}
+
+		const std::vector<Material>& getMaterials() const {
+			return materials;
+		}
+
+        size_t getTextureCount() const {
+            return textures.size();
+        }
+
+        VkDescriptorImageInfo getTextureDescriptorInfo(
+            size_t index) const;
+
+        void drawPrimitive(
+			VkCommandBuffer commandBuffer,
+			uint32_t firstIndex,
+			uint32_t indexCount);
+
     private:
 
         void createVertexBuffer(
@@ -79,6 +119,9 @@ namespace rap {
 
         std::unique_ptr<RapBuffer> vertexBuffer;
         std::unique_ptr<RapBuffer> indexBuffer;
+        std::vector<std::unique_ptr<RaptorImage>> textures;
+        std::vector<Primitive> primitives;
+		std::vector<Material> materials;
 
         uint32_t vertexCount = 0;
         uint32_t indexCount = 0;

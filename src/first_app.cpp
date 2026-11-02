@@ -1,13 +1,13 @@
 #include "first_app.hpp"
 
-// my libs
+// My libs
 #include "keyboard_movement_controller.hpp"
 #include "rap_camera.hpp"
 #include "systems/simple_render_system.hpp"
 #include "systems/point_light_system.hpp"
 #include "systems/deferred_lighting_system.hpp"
 #include "rap_window.hpp"
-#include "rap_buffer.hpp"
+#include "buffers/rap_buffer.hpp"
 
 // GLM
 #define GLM_FORCE_RADIANS
@@ -16,7 +16,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
-// std
+// Std
 #include <array>
 #include <cassert>
 #include <stdexcept>
@@ -29,6 +29,14 @@
 namespace rap {
 
     RaptorFirstApp::RaptorFirstApp() {
+        textureSetLayout = RaptorDescriptorSetLayout::Builder{ device }
+            .addBinding(
+                0,
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                VK_SHADER_STAGE_FRAGMENT_BIT
+            )
+            .build();
+
         globalSetLayout = RaptorDescriptorSetLayout::Builder{ device }
             .addBinding(
                 0,
@@ -45,6 +53,45 @@ namespace rap {
             .setMaxSets(RaptorSwapChain::MAX_FRAMES_IN_FLIGHT)
             .build();
 
+        texturePool = RaptorDescriptorPool::Builder{ device }
+            .addPoolSize(
+                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                1000
+            )
+            .setMaxSets(1000)
+            .build();
+
+        const std::vector<unsigned char> whitePixel{
+            255, 255, 255, 255
+        };
+
+        defaultTexture = std::make_unique<RaptorImage>(
+            device,
+            VkExtent2D{ 1, 1 },
+            VK_FORMAT_R8G8B8A8_SRGB,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            whitePixel
+        );
+
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.sampler = defaultTexture->getSampler();
+        imageInfo.imageView = defaultTexture->getImageView();
+        imageInfo.imageLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        RaptorDescriptorWriter textureWriter{
+            *textureSetLayout,
+            *texturePool
+        };
+
+        textureWriter.writeImage(0, &imageInfo);
+
+        if (!textureWriter.build(defaultTextureDescriptorSet)) {
+            throw std::runtime_error(
+                "failed to create default texture descriptor set!"
+            );
+        }
+
         loadGameObjects();
     }
 
@@ -52,7 +99,7 @@ namespace rap {
 
     void RaptorFirstApp::run() {
 
-        std::cout << "running raptor v0.0.2" << std::endl;
+        std::cout << "running raptor v0.0.4" << std::endl;
 
         // One uniform buffer per frame in flight.
         std::vector<std::unique_ptr<RapBuffer>> uboBuffers(
@@ -93,10 +140,11 @@ namespace rap {
         SimpleRenderSystem simpleRenderSystem{
             device,
             rapRenderer.getGeometryRenderPass(),
-            globalSetLayout->getDescriptorSetLayout()
+            globalSetLayout->getDescriptorSetLayout(),
+            textureSetLayout->getDescriptorSetLayout()
         };
 
-        // Billboard pass: draws light markers into the swapchain.
+        // Point-light system remains available for future lights.
         PointLightSystem pointLightSystem{
             device,
             rapRenderer.getSwapChainRenderPass(),
@@ -200,6 +248,30 @@ namespace rap {
                 ubo.view = camera.getView();
                 ubo.inverseView = camera.getInverseView();
 
+                // Directional light.
+                // This direction represents the direction the
+                // light rays travel, not the direction toward
+                // the light source.
+                ubo.directionalLightDirection = glm::vec4(
+                    glm::normalize(
+                        glm::vec3(-0.5f, -1.f, -0.3f)
+                    ),
+                    0.f
+                );
+
+                // RGB = light color, W = intensity.
+                ubo.directionalLightColor = {
+                    1.f, 1.f, 1.f, 1.f
+                };
+
+                // Ambient illumination.
+                ubo.ambientLightColor = {
+                    1.f, 1.f, 1.f, 0.01f
+                };
+
+                // No point-light objects are created anymore.
+                // The system still updates the UBO, so adding
+                // point lights later requires no redesign.
                 pointLightSystem.update(frameInfo, ubo);
 
                 uboBuffers[frameIndex]->writeToBuffer(&ubo);
@@ -233,6 +305,7 @@ namespace rap {
 
                 deferredLightingSystem.render(frameInfo);
 
+                // This renders nothing while there are no point lights.
                 pointLightSystem.render(frameInfo);
 
                 rapRenderer.endSwapChainRenderPass(commandBuffer);
@@ -244,55 +317,41 @@ namespace rap {
         vkDeviceWaitIdle(device.device());
     }
 
+    // Makes one descriptor set (set 1: sampler2D) for every texture
+    // loaded from the model. Index i == the model's texture i.
+    std::vector<VkDescriptorSet> RaptorFirstApp::createTextureDescriptorSets(
+        const RaptorModel& model) {
+
+        std::vector<VkDescriptorSet> sets(model.getTextureCount());
+
+        for (size_t i = 0; i < sets.size(); ++i) {
+            VkDescriptorImageInfo imageInfo =
+                model.getTextureDescriptorInfo(i);
+
+            RaptorDescriptorWriter writer{
+                *textureSetLayout,
+                *texturePool
+            };
+
+            writer.writeImage(0, &imageInfo);
+
+            if (!writer.build(sets[i])) {
+                throw std::runtime_error(
+                    "failed to create descriptor set for model texture "
+                    + std::to_string(i)
+                );
+            }
+        }
+
+        return sets;
+    }
+
     void RaptorFirstApp::loadGameObjects() {
-
-        std::shared_ptr<RaptorModel> smooth_vaseModel =
-            RaptorModel::createModelFromFile(
-                device,
-                "models/smooth_vase.glb"
-            );
-
-        // Vase 1.
-        auto smooth_vase =
-            RaptorGameObject::createGameObject();
-
-        smooth_vase.model = smooth_vaseModel;
-
-        smooth_vase.transform.translation = {
-            0.25f, 0.25f, 1.f
-        };
-
-        smooth_vase.transform.scale = glm::vec3{ 1.f };
-        smooth_vase.color = { 1.f, 0.f, 0.f };
-
-        gameObjects.emplace(
-            smooth_vase.getId(),
-            std::move(smooth_vase)
-        );
-
-        // Vase 2.
-        auto smooth_vase1 =
-            RaptorGameObject::createGameObject();
-
-        smooth_vase1.model = smooth_vaseModel;
-
-        smooth_vase1.transform.translation = {
-            -0.25f, 0.25f, -0.5f
-        };
-
-        smooth_vase1.transform.scale = glm::vec3{ 1.f };
-        smooth_vase1.color = { 1.f, 0.f, 0.f };
-
-        gameObjects.emplace(
-            smooth_vase1.getId(),
-            std::move(smooth_vase1)
-        );
-
         // Ground floor.
         std::shared_ptr<RaptorModel> floorModel =
             RaptorModel::createModelFromFile(
                 device,
-                "models/quad.glb"
+                "models/plane.glb"
             );
 
         auto floor = RaptorGameObject::createGameObject();
@@ -306,51 +365,19 @@ namespace rap {
         floor.transform.scale =
             glm::vec3{ 3.f, 1.f, 3.f };
 
-        floor.color = { 1.f, 0.f, 0.f };
+        floor.color = { 1.f, 1.f, 1.f };
+
+        floor.defaultTextureDescriptorSet = defaultTextureDescriptorSet;
+        floor.textureDescriptorSets = createTextureDescriptorSets(*floorModel);
 
         gameObjects.emplace(
             floor.getId(),
             std::move(floor)
         );
 
-        // Point lights.
-        std::vector<glm::vec3> lightColors{
-            { 1.f, .1f, .1f },
-            { .1f, .1f, 1.f },
-            { .1f, 1.f, .1f },
-            { 1.f, 1.f, .1f },
-            { .1f, 1.f, 1.f },
-            { 1.f, 1.f, 1.f }
-        };
-
-        for (int i = 0;
-            i < static_cast<int>(lightColors.size());
-            ++i) {
-
-            auto pointLight =
-                RaptorGameObject::makePointLight(.2f);
-
-            pointLight.color = lightColors[i];
-
-            auto rotateLight = glm::rotate(
-                glm::mat4(1.f),
-                (
-                    static_cast<float>(i) *
-                    glm::two_pi<float>()
-                    ) / static_cast<float>(lightColors.size()),
-                glm::vec3{ 0.f, -1.f, 0.f }
-            );
-
-            pointLight.transform.translation = glm::vec3(
-                rotateLight *
-                glm::vec4(-1.f, -1.f, -1.f, -1.f)
-            );
-
-            gameObjects.emplace(
-                pointLight.getId(),
-                std::move(pointLight)
-            );
-        }
+        // No point-light objects are created here.
+        // The point-light system and shader remain available
+        // for future use.
     }
 
 } // namespace rap

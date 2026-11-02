@@ -228,7 +228,7 @@ add_library(raptor SHARED
     src/rap_renderer.cpp
     src/rap_swap_chain.cpp
     src/rap_pipeline.cpp
-    src/rap_buffer.cpp
+    "src/buffers/rap_buffer.cpp"
     src/rap_game_object.cpp
     src/rap_camera.cpp
     src/rap_model.cpp

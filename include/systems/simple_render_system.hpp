@@ -18,7 +18,8 @@ namespace rap {
         SimpleRenderSystem(
             RaptorDevice& device,
             VkRenderPass renderPass,
-            VkDescriptorSetLayout globalSetLayout);
+            VkDescriptorSetLayout globalSetLayout,
+            VkDescriptorSetLayout textureSetLayout);
 
         ~SimpleRenderSystem();
 
@@ -33,7 +34,9 @@ namespace rap {
 
     private:
 
-        void createPipelineLayout(VkDescriptorSetLayout globalSetLayout);
+        void createPipelineLayout(
+            VkDescriptorSetLayout globalSetLayout,
+            VkDescriptorSetLayout textureSetLayout);
 
         void createPipeline(
             VkRenderPass renderPass);

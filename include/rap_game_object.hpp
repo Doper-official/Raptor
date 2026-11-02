@@ -8,6 +8,7 @@
 // std
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace rap {
 
@@ -55,6 +56,12 @@ namespace rap {
 
         //mmmm yes ptrs very optional tho
         std::shared_ptr<RaptorModel> model{};
+        // One descriptor set per texture inside the model (same index as the
+        // model's textures / Material::baseColorTextureIndex).
+        std::vector<VkDescriptorSet> textureDescriptorSets{};
+
+        // Used when a primitive has no texture (plain white).
+        VkDescriptorSet defaultTextureDescriptorSet = VK_NULL_HANDLE;
         std::unique_ptr<PointLightComponent> pointLight = nullptr;
 
     private:

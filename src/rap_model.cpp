@@ -324,6 +324,78 @@ namespace {
             glbError("The file contains no meshes.");
         }
 
+        builder.textures.clear();
+
+        for (const tinygltf::Image& image : model.images) {
+            if (image.width <= 0 || image.height <= 0) {
+                glbError("GLB contains an image with invalid Dimensions");
+            }
+
+            if (image.bits != 8 ||
+                (image.component != 3 && image.component != 4)) {
+                glbError("Raptor supports 8-bit RGB and RGBA textures only");
+            }
+
+            const std::size_t pixelCount =
+                static_cast<std::size_t>(image.width) * image.height;
+
+            if (image.image.size() != pixelCount * image.component) {
+                glbError("GLB image data has an invalid size");
+            }
+
+            rap::RaptorModel::TextureData texture{};
+            
+            texture.width = static_cast<uint32_t>(image.width);
+            texture.height = static_cast<uint32_t>(image.height);
+
+            texture.pixels.resize(pixelCount * 4);
+
+            for (std::size_t i = 0; i < pixelCount; ++i) {
+                const std::size_t src = i * image.component;
+                const std::size_t dst = i * 4;
+
+                texture.pixels[dst + 0] = image.image[src + 0];
+                texture.pixels[dst + 1] = image.image[src + 1];
+                texture.pixels[dst + 2] = image.image[src + 2];
+
+                //alpha color image preservation thing
+                texture.pixels[dst + 3] =
+                    image.component == 4 ? image.image[src + 3] : 255;
+            }
+
+            builder.textures.push_back(std::move(texture));
+        }
+        builder.materials.clear();
+
+        for (const tinygltf::Material& gltfMaterial : model.materials) {
+            rap::RaptorModel::Material material{};
+
+            const int textureIndex =
+                gltfMaterial.pbrMetallicRoughness
+                .baseColorTexture.index;
+
+            if (textureIndex >= 0) {
+                if (static_cast<std::size_t>(textureIndex) >=
+                    model.textures.size()) {
+                    glbError("Material refrences an invalid texture");
+                }
+
+                const int imageIndex =
+                    model.textures[
+                        static_cast<std::size_t>(textureIndex)
+                    ].source;
+
+                if (imageIndex < 0 ||
+                    static_cast<std::size_t>(imageIndex) >=
+                    builder.textures.size()) {
+                    glbError("Texture refrences an invalid image");
+                }
+
+                material.baseColorTextureIndex = imageIndex;
+            }
+            builder.materials.push_back(material);
+        }
+
         builder.vertices.clear();
         builder.indices.clear();
 
@@ -331,6 +403,9 @@ namespace {
 
             for (const tinygltf::Primitive& primitive :
                 mesh.primitives) {
+
+                const uint32_t firstIndex =
+                    static_cast<uint32_t>(builder.indices.size());
 
                 // Raptor currently renders triangle lists.
                 if (primitive.mode != -1 &&
@@ -574,6 +649,18 @@ namespace {
                         );
                     }
                 }
+
+                //record this primitive's index range and material
+                rap::RaptorModel::Primitive modelPrimitive{};
+
+                modelPrimitive.firstIndex = firstIndex;
+
+                modelPrimitive.indexCount =
+                    static_cast<std::uint32_t>(builder.indices.size()) - firstIndex;
+
+                modelPrimitive.materialIndex = primitive.material;
+
+                builder.primitive.push_back(modelPrimitive);
             }
         }
 
@@ -619,12 +706,27 @@ namespace rap {
     RaptorModel::RaptorModel(
         RaptorDevice& device,
         const RaptorModel::Builder& builder)
-        : device{ device } {
+        : device{ device },
+        primitives{ builder.primitive },
+        materials{ builder.materials } {
 
         createVertexBuffer(builder.vertices);
         createIndexBuffer(builder.indices);
-    }
 
+        textures.reserve(builder.textures.size());
+
+        for (const TextureData& textureData : builder.textures) {
+            textures.push_back(
+                std::make_unique<RaptorImage>(
+                    device,
+                    VkExtent2D{ textureData.width, textureData.height },
+                    VK_FORMAT_R8G8B8A8_SRGB,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    textureData.pixels
+                )
+            );
+        }
+    }
 
     RaptorModel::~RaptorModel() {}
 
@@ -816,6 +918,41 @@ namespace rap {
         }
     }
 
+	VkDescriptorImageInfo RaptorModel::getTextureDescriptorInfo(
+		size_t index) const {
+		if (index >= textures.size()) {
+			throw std::runtime_error(
+				" glbTexture index out of range."
+			);
+		}
+		
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.sampler = textures[index]->getSampler();
+		imageInfo.imageView = textures[index]->getImageView();
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		return imageInfo;
+	}
+
+    void RaptorModel::drawPrimitive(
+        VkCommandBuffer commandBuffer,
+        uint32_t firstIndex,
+        uint32_t indexCount
+    ) {
+
+		if (!hasIndexBuffer || indexCount == 0) {
+            return;
+		}
+
+        vkCmdDrawIndexed(
+            commandBuffer,
+            indexCount,
+            1,
+            firstIndex,
+            0,
+            0
+        );
+    }
 
     std::vector<VkVertexInputBindingDescription>
         RaptorModel::Vertex::getBindingDescriptions() {

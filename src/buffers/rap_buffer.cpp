@@ -2,7 +2,7 @@
  * Encapsulates a Vulkan buffer
  */
 
-#include "rap_buffer.hpp"
+#include "buffers/rap_buffer.hpp"
 
  // std
 #include <cassert>

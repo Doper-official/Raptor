@@ -31,6 +31,8 @@ namespace rap {
 
     private:
         void loadGameObjects();
+        std::vector<VkDescriptorSet> createTextureDescriptorSets(
+            const RaptorModel& model);
         void createPipeline();
         void renderGameObjects(VkCommandBuffer commandBuffer);
 
@@ -46,7 +48,11 @@ namespace rap {
         VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
 
         std::unique_ptr<RaptorDescriptorSetLayout> globalSetLayout{};
+        std::unique_ptr<RaptorDescriptorSetLayout> textureSetLayout;
         std::unique_ptr<RaptorDescriptorPool> globalPool{};
+        std::unique_ptr<RaptorDescriptorPool> texturePool{};
+		std::unique_ptr<RaptorImage> defaultTexture{};
+        VkDescriptorSet defaultTextureDescriptorSet = VK_NULL_HANDLE;
 		RaptorGameObject::Map gameObjects{};
     };
 

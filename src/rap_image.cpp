@@ -21,11 +21,21 @@ namespace rap {
 
 		try {
 			createImageView();
+			createSampler();
 		}
-		catch(...){
+		catch (...) {
+			if (sampler != VK_NULL_HANDLE) {
+				vkDestroySampler(device.device(), sampler, nullptr);
+			}
+			if (imageView != VK_NULL_HANDLE) {
+				vkDestroyImageView(device.device(), imageView, nullptr);
+			}
+
 			vkDestroyImage(device.device(), image, nullptr);
 			vkFreeMemory(device.device(), imageMemory, nullptr);
 
+			sampler = VK_NULL_HANDLE;
+			imageView = VK_NULL_HANDLE;
 			image = VK_NULL_HANDLE;
 			imageMemory = VK_NULL_HANDLE;
 
@@ -33,7 +43,37 @@ namespace rap {
 		}
 	}
 
+	RaptorImage::RaptorImage(
+		RaptorDevice& device,
+		VkExtent2D extent,
+		VkFormat format,
+		VkImageAspectFlags aspect,
+		const std::vector<unsigned char>& pixels
+	) : RaptorImage{
+		device,
+		extent,
+		format,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+		VK_IMAGE_USAGE_SAMPLED_BIT,
+		aspect
+	} {
+		const VkDeviceSize expectedSize =
+			static_cast<VkDeviceSize>(extent.width) *
+			static_cast<VkDeviceSize>(extent.height) * 4;
+
+		if (pixels.size() != expectedSize) {
+			throw std::runtime_error(
+				"RaptorImage expects RGBA8 pixel data");
+		}
+
+		uploadPixels(pixels);
+	}
+
 	RaptorImage::~RaptorImage() {
+		if (sampler != VK_NULL_HANDLE) {
+			vkDestroySampler(device.device(), sampler, nullptr);
+		}
+
 		if (imageView != VK_NULL_HANDLE) {
 			vkDestroyImageView(
 				device.device(), imageView, nullptr);
@@ -87,7 +127,7 @@ namespace rap {
 	}
 
 	void RaptorImage::createImageView() {
-		
+
 		//viewInfo
 		VkImageViewCreateInfo viewInfo{};
 		viewInfo.sType =
@@ -107,4 +147,140 @@ namespace rap {
 		}
 	}
 
-}
+	void RaptorImage::createSampler() {
+		VkSamplerCreateInfo samplerInfo{};
+
+		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+		samplerInfo.magFilter = VK_FILTER_LINEAR;
+		samplerInfo.minFilter = VK_FILTER_LINEAR;
+		samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerInfo.anisotropyEnable = VK_FALSE;
+		samplerInfo.maxAnisotropy = 1.f;
+		samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		samplerInfo.unnormalizedCoordinates = VK_FALSE;
+		samplerInfo.compareEnable = VK_FALSE;
+		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		samplerInfo.mipLodBias = 0.f;
+		samplerInfo.minLod = 0.f;
+		samplerInfo.maxLod = 0.f;
+
+		if (vkCreateSampler(
+			device.device(),
+			&samplerInfo,
+			nullptr,
+			&sampler) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture sampler!");
+		}
+	}
+
+	void RaptorImage::uploadPixels(
+		const std::vector<unsigned char>& pixels
+	) {
+
+		const VkDeviceSize imageSize =
+			static_cast<VkDeviceSize>(pixels.size());
+
+		RapBuffer stagingBuffer{
+			device,
+			imageSize,
+			1,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		};
+
+		if (stagingBuffer.map() != VK_SUCCESS) {
+			throw std::runtime_error("failed to map texture staging buffer");
+		}
+
+		stagingBuffer.writeToBuffer(
+			const_cast<unsigned char*>(pixels.data()),
+			imageSize
+		);
+
+		transitionImageLayout(
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+		);
+
+		device.copyBufferToImage(
+			stagingBuffer.getBuffer(),
+			image,
+			extent.width,
+			extent.height,
+			1
+		);
+
+		transitionImageLayout(
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		);
+	}
+
+	void RaptorImage::transitionImageLayout(
+		VkImageLayout oldLayout,
+		VkImageLayout newLayout
+	) {
+
+		VkCommandBuffer commandBuffer =
+			device.beginSingleTimeCommands();
+
+		VkImageMemoryBarrier barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = oldLayout;
+		barrier.newLayout = newLayout;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = image;
+		barrier.subresourceRange.aspectMask = aspect;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		VkPipelineStageFlags sourceStage;
+		VkPipelineStageFlags destinationStage;
+
+		if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+			newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			barrier.srcAccessMask = 0;
+			barrier.dstAccessMask =
+				VK_ACCESS_TRANSFER_WRITE_BIT;
+			sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			destinationStage =
+				VK_PIPELINE_STAGE_TRANSFER_BIT;
+		}
+
+		else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+			newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			barrier.srcAccessMask =
+				VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask =
+				VK_ACCESS_SHADER_READ_BIT;
+			sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			destinationStage =
+				VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		}
+
+		else {
+			throw std::invalid_argument(
+				"unsupported RaptorImage layout transition!");
+		}
+
+		vkCmdPipelineBarrier(
+			commandBuffer,
+			sourceStage,
+			destinationStage,
+			0,
+			0,
+			nullptr,
+			0,
+			nullptr,
+			1,
+			&barrier
+		);
+		device.endSingleTimeCommands(commandBuffer);
+	}
+} // namespace rap
