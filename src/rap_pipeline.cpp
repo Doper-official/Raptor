@@ -166,16 +166,19 @@ namespace rap {
             configInfo.colorBlendAttachments;
 
         const uint32_t colorBlendAttachmentCount =
-            colorBlendAttachments.empty()
-            ? 1u
-            : static_cast<uint32_t>(
-                colorBlendAttachments.size());
+            configInfo.depthOnly
+            ? 0u
+            : (colorBlendAttachments.empty()
+                ? 1u
+                : static_cast<uint32_t>(colorBlendAttachments.size()));
 
         const VkPipelineColorBlendAttachmentState*
             colorBlendAttachmentData =
-            colorBlendAttachments.empty()
-            ? &configInfo.colorBlendAttachment
-            : colorBlendAttachments.data();
+            configInfo.depthOnly
+            ? nullptr
+            : (colorBlendAttachments.empty()
+                ? &configInfo.colorBlendAttachment
+                : colorBlendAttachments.data());
 
         // Use a local copy so the caller's configuration is not modified.
         VkPipelineColorBlendStateCreateInfo colorBlendInfo =

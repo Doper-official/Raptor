@@ -62,6 +62,10 @@ namespace rap {
         VkRenderPass
             renderPass = VK_NULL_HANDLE;
 
+        // Depth-only passes have zero color attachments. The old default
+        // assumed one, which is not legal for a depth-only render pass.
+        bool depthOnly = false;
+
         uint32_t subpass = 0;
     };
 

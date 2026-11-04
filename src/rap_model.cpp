@@ -9,6 +9,8 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 // Standard library
 #include <algorithm>
@@ -16,7 +18,9 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -398,56 +402,131 @@ namespace {
 
         builder.vertices.clear();
         builder.indices.clear();
+        builder.primitive.clear();
 
-        for (const tinygltf::Mesh& mesh : model.meshes) {
+        // glTF meshes are not scene objects by themselves. Nodes decide
+        // where each mesh actually lives, so walk the active scene instead
+        // of blindly drawing every mesh at the origin.
+        auto makeNodeTransform = [](const tinygltf::Node& node) {
+            if (node.matrix.size() == 16) {
+                glm::mat4 matrix{ 1.0f };
 
-            for (const tinygltf::Primitive& primitive :
-                mesh.primitives) {
+                // glTF matrices are column-major, just like GLM.
+                for (int column = 0; column < 4; ++column) {
+                    for (int row = 0; row < 4; ++row) {
+                        matrix[column][row] = static_cast<float>(
+                            node.matrix[column * 4 + row]
+                        );
+                    }
+                }
+
+                return matrix;
+            }
+
+            glm::vec3 translation{ 0.0f };
+            glm::vec3 scale{ 1.0f };
+            glm::quat rotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+
+            if (node.translation.size() == 3) {
+                translation = {
+                    static_cast<float>(node.translation[0]),
+                    static_cast<float>(node.translation[1]),
+                    static_cast<float>(node.translation[2])
+                };
+            }
+
+            if (node.scale.size() == 3) {
+                scale = {
+                    static_cast<float>(node.scale[0]),
+                    static_cast<float>(node.scale[1]),
+                    static_cast<float>(node.scale[2])
+                };
+            }
+
+            if (node.rotation.size() == 4) {
+                // glTF stores quaternions as x, y, z, w.
+                rotation = glm::quat{
+                    static_cast<float>(node.rotation[3]),
+                    static_cast<float>(node.rotation[0]),
+                    static_cast<float>(node.rotation[1]),
+                    static_cast<float>(node.rotation[2])
+                };
+
+                const float rotationLength = glm::length(rotation);
+                if (rotationLength > 0.000001f) {
+                    rotation = glm::normalize(rotation);
+                }
+                else {
+                    glbError("A node contains a zero-length rotation quaternion.");
+                }
+            }
+
+            return glm::translate(glm::mat4{ 1.0f }, translation) *
+                glm::mat4_cast(rotation) *
+                glm::scale(glm::mat4{ 1.0f }, scale);
+        };
+
+        auto appendMesh = [&](int meshIndex, const glm::mat4& worldMatrix) {
+            if (meshIndex < 0 ||
+                static_cast<std::size_t>(meshIndex) >= model.meshes.size()) {
+                glbError("A scene node references an invalid mesh.");
+            }
+
+            const glm::mat3 worldLinear{ worldMatrix };
+            const float determinant = glm::determinant(worldLinear);
+
+            if (std::abs(determinant) < 0.0000001f) {
+                glbError("A mesh node has a singular transform (zero scale).");
+            }
+
+            // Normals are directions perpendicular to the surface. They
+            // need inverse-transpose, not the position transform.
+            const glm::mat3 normalMatrix =
+                glm::transpose(glm::inverse(worldLinear));
+
+            const bool mirrored = determinant < 0.0f;
+
+            const tinygltf::Mesh& mesh =
+                model.meshes[static_cast<std::size_t>(meshIndex)];
+
+            for (const tinygltf::Primitive& primitive : mesh.primitives) {
+                if (builder.indices.size() >
+                    std::numeric_limits<std::uint32_t>::max()) {
+                    glbError("The model has too many indices for uint32 draws.");
+                }
 
                 const uint32_t firstIndex =
                     static_cast<uint32_t>(builder.indices.size());
 
-                // Raptor currently renders triangle lists.
                 if (primitive.mode != -1 &&
                     primitive.mode != TINYGLTF_MODE_TRIANGLES) {
-
-                    glbError(
-                        "Only triangle-list primitives are supported."
-                    );
+                    glbError("Only triangle-list primitives are supported.");
                 }
 
                 const auto positionAttribute =
                     primitive.attributes.find("POSITION");
 
-                if (positionAttribute ==
-                    primitive.attributes.end()) {
-
-                    glbError(
-                        "A mesh primitive has no POSITION attribute."
-                    );
+                if (positionAttribute == primitive.attributes.end()) {
+                    glbError("A mesh primitive has no POSITION attribute.");
                 }
 
-                const FloatAccessorData positions =
-                    getFloatAccessor(
-                        model,
-                        positionAttribute->second,
-                        TINYGLTF_TYPE_VEC3,
-                        3,
-                        "POSITION"
-                    );
+                const FloatAccessorData positions = getFloatAccessor(
+                    model,
+                    positionAttribute->second,
+                    TINYGLTF_TYPE_VEC3,
+                    3,
+                    "POSITION"
+                );
 
                 FloatAccessorData normals{};
                 FloatAccessorData uvs{};
-
                 bool hasNormals = false;
                 bool hasUVs = false;
 
                 const auto normalAttribute =
                     primitive.attributes.find("NORMAL");
 
-                if (normalAttribute !=
-                    primitive.attributes.end()) {
-
+                if (normalAttribute != primitive.attributes.end()) {
                     normals = getFloatAccessor(
                         model,
                         normalAttribute->second,
@@ -457,20 +536,15 @@ namespace {
                     );
 
                     if (normals.count != positions.count) {
-                        glbError(
-                            "NORMAL count does not match POSITION count."
-                        );
+                        glbError("NORMAL count does not match POSITION count.");
                     }
-
                     hasNormals = true;
                 }
 
                 const auto uvAttribute =
                     primitive.attributes.find("TEXCOORD_0");
 
-                if (uvAttribute !=
-                    primitive.attributes.end()) {
-
+                if (uvAttribute != primitive.attributes.end()) {
                     uvs = getFloatAccessor(
                         model,
                         uvAttribute->second,
@@ -480,196 +554,256 @@ namespace {
                     );
 
                     if (uvs.count != positions.count) {
-                        glbError(
-                            "TEXCOORD_0 count does not match POSITION count."
-                        );
+                        glbError("TEXCOORD_0 count does not match POSITION count.");
                     }
-
                     hasUVs = true;
                 }
 
-                if (positions.count >
-                    std::numeric_limits<std::uint32_t>::max()) {
-
-                    glbError(
-                        "A primitive has too many vertices for uint32 indices."
-                    );
+                if (positions.count > std::numeric_limits<std::uint32_t>::max() ||
+                    builder.vertices.size() >
+                        std::numeric_limits<std::uint32_t>::max() - positions.count) {
+                    glbError("The model has too many vertices for uint32 indices.");
                 }
 
-                if (builder.vertices.size() >
-                    std::numeric_limits<std::uint32_t>::max() -
-                    positions.count) {
+                // Gather local indices first. We need them to generate a
+                // fallback normal if a model forgot to export NORMAL.
+                std::vector<std::uint32_t> localIndices;
 
-                    glbError(
-                        "The model has too many vertices for uint32 indices."
+                if (primitive.indices >= 0) {
+                    if (static_cast<std::size_t>(primitive.indices) >=
+                        model.accessors.size()) {
+                        glbError("Primitive references an invalid index accessor.");
+                    }
+
+                    const tinygltf::Accessor& indexAccessor =
+                        model.accessors[static_cast<std::size_t>(primitive.indices)];
+
+                    if (indexAccessor.type != TINYGLTF_TYPE_SCALAR) {
+                        glbError("The index accessor must be a scalar.");
+                    }
+
+                    if (indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE &&
+                        indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT &&
+                        indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
+                        glbError("Indices must use unsigned 8-bit, 16-bit, or 32-bit values.");
+                    }
+
+                    if (indexAccessor.count % 3 != 0) {
+                        glbError("Triangle index count must be divisible by three.");
+                    }
+
+                    const std::size_t componentSize =
+                        getComponentSize(indexAccessor.componentType);
+                    std::size_t indexStride = 0;
+                    const unsigned char* indexData = getAccessorData(
+                        model,
+                        indexAccessor,
+                        componentSize,
+                        indexStride
                     );
+
+                    localIndices.reserve(indexAccessor.count);
+                    for (std::size_t i = 0; i < indexAccessor.count; ++i) {
+                        const std::uint32_t localIndex = readGLBIndex(
+                            model,
+                            indexAccessor,
+                            indexData,
+                            indexStride,
+                            i
+                        );
+
+                        if (localIndex >= positions.count) {
+                            glbError("An index references a nonexistent vertex.");
+                        }
+                        localIndices.push_back(localIndex);
+                    }
+                }
+                else {
+                    if (positions.count % 3 != 0) {
+                        glbError("Non-indexed triangle vertex count must be divisible by three.");
+                    }
+
+                    localIndices.reserve(positions.count);
+                    for (std::size_t i = 0; i < positions.count; ++i) {
+                        localIndices.push_back(static_cast<std::uint32_t>(i));
+                    }
+                }
+
+                // A reflected node transform reverses triangle winding.
+                // Flip each triangle so its winding still agrees with its
+                // transformed normal.
+                if (mirrored) {
+                    for (std::size_t i = 0; i < localIndices.size(); i += 3) {
+                        std::swap(localIndices[i + 1], localIndices[i + 2]);
+                    }
                 }
 
                 const std::uint32_t baseVertex =
-                    static_cast<std::uint32_t>(
-                        builder.vertices.size()
-                        );
+                    static_cast<std::uint32_t>(builder.vertices.size());
 
-                // Read vertex attributes.
+                std::vector<glm::vec3> generatedNormalSums(positions.count, glm::vec3{ 0.0f });
+                std::vector<glm::vec3> transformedPositions(positions.count);
+                std::vector<glm::vec3> transformedNormals(positions.count, glm::vec3{ 0.0f });
+                std::vector<glm::vec2> texcoords(positions.count, glm::vec2{ 0.0f });
+
                 for (std::size_t i = 0; i < positions.count; ++i) {
+                    glm::vec3 position{};
+                    readFloat3(positions, i, position);
+                    transformedPositions[i] =
+                        glm::vec3(worldMatrix * glm::vec4(position, 1.0f));
 
-                    rap::RaptorModel::Vertex vertex{};
-
-                    // Positions are required.
-                    readFloat3(
-                        positions,
-                        i,
-                        vertex.position
-                    );
-
-                    // Every vertex starts white.
-                    vertex.color = {
-                        1.0f,
-                        1.0f,
-                        1.0f
-                    };
-
-                    // Missing normals and UVs remain zero.
                     if (hasNormals) {
-                        readFloat3(
-                            normals,
-                            i,
-                            vertex.normal
-                        );
+                        glm::vec3 normal{};
+                        readFloat3(normals, i, normal);
+
+                        if (glm::dot(normal, normal) > 0.0000001f) {
+                            transformedNormals[i] = glm::normalize(normalMatrix * normal);
+                        }
                     }
 
                     if (hasUVs) {
-                        readFloat2(
-                            uvs,
-                            i,
-                            vertex.uv
-                        );
+                        readFloat2(uvs, i, texcoords[i]);
+                    }
+                }
+
+                // Compute smooth fallback normals only where needed. This
+                // also repairs zero/invalid entries without flattening the
+                // good normals already supplied by the asset.
+                for (std::size_t i = 0; i < localIndices.size(); i += 3) {
+                    const std::uint32_t a = localIndices[i + 0];
+                    const std::uint32_t b = localIndices[i + 1];
+                    const std::uint32_t c = localIndices[i + 2];
+
+                    const glm::vec3 edgeA = transformedPositions[b] - transformedPositions[a];
+                    const glm::vec3 edgeB = transformedPositions[c] - transformedPositions[a];
+                    const glm::vec3 faceNormal = glm::cross(edgeA, edgeB);
+
+                    if (glm::dot(faceNormal, faceNormal) > 0.0000001f) {
+                        generatedNormalSums[a] += faceNormal;
+                        generatedNormalSums[b] += faceNormal;
+                        generatedNormalSums[c] += faceNormal;
+                    }
+                }
+
+                for (std::size_t i = 0; i < positions.count; ++i) {
+                    rap::RaptorModel::Vertex vertex{};
+                    vertex.position = transformedPositions[i];
+                    vertex.color = { 1.0f, 1.0f, 1.0f };
+                    vertex.uv = texcoords[i];
+
+                    const glm::vec3 generated = generatedNormalSums[i];
+                    if (glm::dot(transformedNormals[i], transformedNormals[i]) > 0.0000001f) {
+                        vertex.normal = glm::normalize(transformedNormals[i]);
+                    }
+                    else if (glm::dot(generated, generated) > 0.0000001f) {
+                        vertex.normal = glm::normalize(generated);
+                    }
+                    else {
+                        vertex.normal = { 0.0f, 1.0f, 0.0f };
                     }
 
                     builder.vertices.push_back(vertex);
                 }
 
-                // Convert every primitive into the same global
-                // uint32 index buffer, including non-indexed primitives.
-                if (primitive.indices >= 0) {
-
-                    if (static_cast<std::size_t>(
-                        primitive.indices) >= model.accessors.size()) {
-
-                        glbError(
-                            "Primitive references an invalid index accessor."
-                        );
-                    }
-
-                    const tinygltf::Accessor& indexAccessor =
-                        model.accessors[
-                            static_cast<std::size_t>(
-                                primitive.indices
-                                )
-                        ];
-
-                    if (indexAccessor.type != TINYGLTF_TYPE_SCALAR) {
-                        glbError(
-                            "The index accessor must be a scalar."
-                        );
-                    }
-
-                    if (indexAccessor.componentType !=
-                        TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE &&
-                        indexAccessor.componentType !=
-                        TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT &&
-                        indexAccessor.componentType !=
-                        TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
-
-                        glbError(
-                            "Unsupported index component type."
-                        );
-                    }
-
-                    if (indexAccessor.count % 3 != 0) {
-                        glbError(
-                            "Triangle index count must be divisible by three."
-                        );
-                    }
-
-                    const std::size_t componentSize =
-                        getComponentSize(
-                            indexAccessor.componentType
-                        );
-
-                    std::size_t indexStride = 0;
-
-                    const unsigned char* indexData =
-                        getAccessorData(
-                            model,
-                            indexAccessor,
-                            componentSize,
-                            indexStride
-                        );
-
-                    for (std::size_t i = 0;
-                        i < indexAccessor.count;
-                        ++i) {
-
-                        const std::uint32_t localIndex =
-                            readGLBIndex(
-                                model,
-                                indexAccessor,
-                                indexData,
-                                indexStride,
-                                i
-                            );
-
-                        if (localIndex >= positions.count) {
-                            glbError(
-                                "An index references a nonexistent vertex."
-                            );
-                        }
-
-                        builder.indices.push_back(
-                            baseVertex + localIndex
-                        );
-                    }
-                }
-                else {
-
-                    if (positions.count % 3 != 0) {
-                        glbError(
-                            "Non-indexed triangle vertex count must be divisible by three."
-                        );
-                    }
-
-                    for (std::size_t i = 0;
-                        i < positions.count;
-                        ++i) {
-
-                        builder.indices.push_back(
-                            baseVertex +
-                            static_cast<std::uint32_t>(i)
-                        );
-                    }
+                if (localIndices.size() >
+                    std::numeric_limits<std::uint32_t>::max() - builder.indices.size()) {
+                    glbError("The model has too many indices for uint32 draws.");
                 }
 
-                //record this primitive's index range and material
+                for (const std::uint32_t localIndex : localIndices) {
+                    builder.indices.push_back(baseVertex + localIndex);
+                }
+
+                if (primitive.material < -1 ||
+                    (primitive.material >= 0 &&
+                     static_cast<std::size_t>(primitive.material) >= model.materials.size())) {
+                    glbError("A primitive references an invalid material.");
+                }
+
                 rap::RaptorModel::Primitive modelPrimitive{};
-
                 modelPrimitive.firstIndex = firstIndex;
-
                 modelPrimitive.indexCount =
                     static_cast<std::uint32_t>(builder.indices.size()) - firstIndex;
-
                 modelPrimitive.materialIndex = primitive.material;
-
                 builder.primitive.push_back(modelPrimitive);
+            }
+        };
+
+        std::vector<bool> activeNodes(model.nodes.size(), false);
+
+        std::function<void(int, const glm::mat4&)> visitNode;
+        visitNode = [&](int nodeIndex, const glm::mat4& parentMatrix) {
+            if (nodeIndex < 0 ||
+                static_cast<std::size_t>(nodeIndex) >= model.nodes.size()) {
+                glbError("A scene references an invalid node.");
+            }
+
+            const std::size_t index = static_cast<std::size_t>(nodeIndex);
+            if (activeNodes[index]) {
+                glbError("The glTF scene graph contains a node cycle.");
+            }
+
+            activeNodes[index] = true;
+            const tinygltf::Node& node = model.nodes[index];
+            const glm::mat4 worldMatrix = parentMatrix * makeNodeTransform(node);
+
+            if (node.mesh >= 0) {
+                appendMesh(node.mesh, worldMatrix);
+            }
+
+            for (const int child : node.children) {
+                visitNode(child, worldMatrix);
+            }
+
+            activeNodes[index] = false;
+        };
+
+        bool visitedScene = false;
+
+        if (!model.scenes.empty()) {
+            int sceneIndex = model.defaultScene;
+            if (sceneIndex < 0 ||
+                static_cast<std::size_t>(sceneIndex) >= model.scenes.size()) {
+                sceneIndex = 0;
+            }
+
+            const tinygltf::Scene& scene =
+                model.scenes[static_cast<std::size_t>(sceneIndex)];
+
+            for (const int rootNode : scene.nodes) {
+                visitNode(rootNode, glm::mat4{ 1.0f });
+                visitedScene = true;
+            }
+        }
+        else if (!model.nodes.empty()) {
+            // Some small GLBs omit the scenes array. Find root nodes from
+            // the node graph and traverse them anyway.
+            std::vector<bool> hasParent(model.nodes.size(), false);
+            for (const tinygltf::Node& node : model.nodes) {
+                for (const int child : node.children) {
+                    if (child >= 0 && static_cast<std::size_t>(child) < hasParent.size()) {
+                        hasParent[static_cast<std::size_t>(child)] = true;
+                    }
+                }
+            }
+
+            for (std::size_t i = 0; i < model.nodes.size(); ++i) {
+                if (!hasParent[i]) {
+                    visitNode(static_cast<int>(i), glm::mat4{ 1.0f });
+                    visitedScene = true;
+                }
             }
         }
 
-        if (builder.vertices.empty() ||
-            builder.indices.empty()) {
+        // Backwards-compatible fallback for unusual mesh-only GLBs.
+        if (!visitedScene) {
+            for (std::size_t i = 0; i < model.meshes.size(); ++i) {
+                appendMesh(static_cast<int>(i), glm::mat4{ 1.0f });
+            }
+        }
 
-            glbError(
-                "The file contains no usable triangle geometry."
-            );
+        if (builder.vertices.empty() || builder.indices.empty()) {
+            glbError("The active scene contains no usable triangle geometry.");
         }
     }
 

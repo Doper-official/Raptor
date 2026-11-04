@@ -22,19 +22,27 @@ namespace rap {
 	}
 
 	void RaptorCamera::setPerspectiveProjection(float fovy, float aspect, float near, float far) {
-		assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
-		const float tanHalfFovy = tan(fovy / 2.f);
-		projectionMatrix = glm::mat4{ 0.0f };
-		projectionMatrix[0][0] = 1.f / (aspect * tanHalfFovy);
-		projectionMatrix[1][1] = 1.f / (tanHalfFovy);
+        assert(aspect > std::numeric_limits<float>::epsilon());
+        assert(near > 0.0f && far > near);
+
+        const float tanHalfFovy = tan(fovy / 2.f);
+        projectionMatrix = glm::mat4{ 0.0f };
+        projectionMatrix[0][0] = 1.f / (aspect * tanHalfFovy);
+
+        // Vulkan's positive-height viewport maps NDC +Y toward the
+        // bottom of the image. Flip clip-space Y here so world +Y
+        // remains visually UP. World coordinates stay untouched.
+        projectionMatrix[1][1] = -1.f / tanHalfFovy;
 		projectionMatrix[2][2] = far / (far - near);
 		projectionMatrix[2][3] = 1.f;
 		projectionMatrix[3][2] = -(far * near) / (far - near);
 	}
 	void RaptorCamera::setViewDirection(glm::vec3 position, glm::vec3 direction, glm::vec3 up) {
 		const glm::vec3 w{ glm::normalize(direction) };
-		const glm::vec3 u{ glm::normalize(glm::cross(w, up)) };
-		const glm::vec3 v{ glm::cross(w, u) };
+        // Keep this basis consistent with setViewYXZ(): +Y is up,
+        // +Z is forward, and +X is camera-right.
+        const glm::vec3 u{ glm::normalize(glm::cross(up, w)) };
+        const glm::vec3 v{ glm::normalize(glm::cross(w, u)) };
 
 		viewMatrix = glm::mat4{ 1.f };
 		viewMatrix[0][0] = u.x;

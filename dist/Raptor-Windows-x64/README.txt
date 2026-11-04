@@ -1,1 +1,0 @@
-the render might be laggy, if it seems laggy or running at a low fps please relaunch the app

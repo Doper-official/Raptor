@@ -152,17 +152,29 @@ namespace rap {
 
 		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 
-		samplerInfo.magFilter = VK_FILTER_LINEAR;
-		samplerInfo.minFilter = VK_FILTER_LINEAR;
-		samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        const bool isDepthImage = (aspect & VK_IMAGE_ASPECT_DEPTH_BIT) != 0;
+        samplerInfo.magFilter = isDepthImage ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        samplerInfo.minFilter = isDepthImage ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = isDepthImage
+            ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+            : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = isDepthImage
+            ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+            : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = isDepthImage
+            ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+            : VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		samplerInfo.anisotropyEnable = VK_FALSE;
 		samplerInfo.maxAnisotropy = 1.f;
-		samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        // A depth-map lookup outside the light frustum must mean "lit".
+        samplerInfo.borderColor = isDepthImage
+            ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
+            : VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 		samplerInfo.unnormalizedCoordinates = VK_FALSE;
 		samplerInfo.compareEnable = VK_FALSE;
-		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.mipmapMode = isDepthImage
+            ? VK_SAMPLER_MIPMAP_MODE_NEAREST
+            : VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInfo.mipLodBias = 0.f;
 		samplerInfo.minLod = 0.f;
 		samplerInfo.maxLod = 0.f;

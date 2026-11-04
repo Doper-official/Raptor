@@ -1,54 +1,36 @@
 @echo off
 setlocal EnableExtensions
 
-REM ============================================================
-REM Raptor model copier
-REM ============================================================
+REM Raptor model copier - keep the runtime folders stocked with models.
+set "ROOT=%~dp0"
+set "SOURCE=%ROOT%models"
+set "TEST_DEST=%ROOT%Test builds\models"
+set "RELEASE_DEST=%ROOT%Release builds\models"
 
-set "RAPTOR_ROOT=%~dp0"
-set "MODELS_SOURCE=%RAPTOR_ROOT%models"
-set "TEST_MODELS=%RAPTOR_ROOT%Test builds\models"
-set "RELEASE_MODELS=%RAPTOR_ROOT%Release builds\models"
-
-echo.
-echo ========================================
-echo Raptor Model Copier
-echo ========================================
-echo.
-
-if not exist "%MODELS_SOURCE%\" (
-    echo ERROR: Models source directory not found:
-    echo "%MODELS_SOURCE%"
+if not exist "%SOURCE%\" (
+    echo ERROR: model source folder not found: "%SOURCE%"
     exit /b 1
 )
 
-if not exist "%TEST_MODELS%\" mkdir "%TEST_MODELS%"
-if errorlevel 1 (
-    echo ERROR: Could not create Test builds\models
-    exit /b 1
-)
+if not exist "%TEST_DEST%\" mkdir "%TEST_DEST%"
+if errorlevel 1 exit /b 1
 
-if not exist "%RELEASE_MODELS%\" mkdir "%RELEASE_MODELS%"
-if errorlevel 1 (
-    echo ERROR: Could not create Release builds\models
-    exit /b 1
-)
+if not exist "%RELEASE_DEST%\" mkdir "%RELEASE_DEST%"
+if errorlevel 1 exit /b 1
 
 echo Copying models to Test builds...
-robocopy "%MODELS_SOURCE%" "%TEST_MODELS%" /E
-if errorlevel 8 (
-    echo ERROR: Failed to copy models to Test builds.
-    exit /b 1
-)
+robocopy "%SOURCE%" "%TEST_DEST%" /E /NFL /NDL /NJH /NJS /NC /NS /NP
+if errorlevel 8 goto :CopyFailed
 
-echo.
 echo Copying models to Release builds...
-robocopy "%MODELS_SOURCE%" "%RELEASE_MODELS%" /E
-if errorlevel 8 (
-    echo ERROR: Failed to copy models to Release builds.
-    exit /b 1
-)
+robocopy "%SOURCE%" "%RELEASE_DEST%" /E /NFL /NDL /NJH /NJS /NC /NS /NP
+if errorlevel 8 goto :CopyFailed
 
 echo.
 echo Models copied successfully.
 exit /b 0
+
+:CopyFailed
+echo.
+echo ERROR: robocopy failed while copying model files.
+exit /b 1

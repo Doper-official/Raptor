@@ -62,7 +62,7 @@ namespace rap {
             throw std::runtime_error("Failed to create deferred-lighting image sampler!");
         }
 
-        std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+        std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
         for (uint32_t i = 0; i < bindings.size(); ++i) {
             bindings[i].binding = i;
             bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -84,7 +84,7 @@ namespace rap {
         constexpr uint32_t frameCount = RaptorSwapChain::MAX_FRAMES_IN_FLIGHT;
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize.descriptorCount = frameCount * 3;
+        poolSize.descriptorCount = frameCount * 4;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -151,18 +151,20 @@ namespace rap {
 
     void DeferredLightingSystem::updateDescriptorSet(
         int frameIndex,
-        const RaptorGeometryBuffer& geometryBuffer) {
+        const RaptorGeometryBuffer& geometryBuffer,
+        const VkDescriptorImageInfo& shadowMapInfo) {
 
         assert(frameIndex >= 0 && frameIndex < static_cast<int>(gBufferDescriptorSets.size()) &&
             "Deferred-lighting frame index is out of bounds!");
 
-        const std::array<VkDescriptorImageInfo, 3> imageInfos{{
+        const std::array<VkDescriptorImageInfo, 4> imageInfos{{
             { imageSampler, geometryBuffer.getAlbedoImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
             { imageSampler, geometryBuffer.getNormalImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-            { imageSampler, geometryBuffer.getDepthImageView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL }
+            { imageSampler, geometryBuffer.getDepthImageView(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL },
+            shadowMapInfo
         }};
 
-        std::array<VkWriteDescriptorSet, 3> writes{};
+        std::array<VkWriteDescriptorSet, 4> writes{};
         for (uint32_t i = 0; i < writes.size(); ++i) {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = gBufferDescriptorSets[frameIndex];

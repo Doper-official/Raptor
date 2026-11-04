@@ -26,7 +26,8 @@ namespace rap {
         // This updates only the descriptor set for the frame whose fence has been waited.
         void updateDescriptorSet(
             int frameIndex,
-            const RaptorGeometryBuffer& geometryBuffer);
+            const RaptorGeometryBuffer& geometryBuffer,
+            const VkDescriptorImageInfo& shadowMapInfo);
 
         // Call inside the swapchain render pass, after the geometry pass has ended.
         void render(FrameInfo& frameInfo);

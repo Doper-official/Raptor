@@ -243,6 +243,7 @@ add_library(raptor SHARED
     src/systems/point_light_system.cpp
     src/systems/simple_render_system.cpp
     src/systems/deferred_lighting_system.cpp
+    src/systems/directional_shadow_system.cpp
 
     # Buffers
     src/buffers/rap_geometry_buffer.cpp

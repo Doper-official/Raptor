@@ -6,6 +6,7 @@
 #include "systems/simple_render_system.hpp"
 #include "systems/point_light_system.hpp"
 #include "systems/deferred_lighting_system.hpp"
+#include "systems/directional_shadow_system.hpp"
 #include "rap_window.hpp"
 #include "buffers/rap_buffer.hpp"
 
@@ -136,6 +137,10 @@ namespace rap {
             writer.build(globalDescriptorSets[i]);
         }
 
+        // Sun first: every frame gets its own depth map so overlapping frames
+        // never write/read the same shadow image at the same time.
+        DirectionalShadowSystem directionalShadowSystem{ device };
+
         // Geometry pass: writes albedo, normal, and depth.
         SimpleRenderSystem simpleRenderSystem{
             device,
@@ -263,6 +268,9 @@ namespace rap {
                 ubo.directionalLightColor = {
                     1.f, 1.f, 1.f, 1.f
                 };
+                ubo.directionalLightViewProjection =
+                    DirectionalShadowSystem::makeLightSpaceMatrix(
+                        glm::vec3(ubo.directionalLightDirection));
 
                 // Ambient illumination.
                 ubo.ambientLightColor = {
@@ -276,10 +284,16 @@ namespace rap {
 
                 uboBuffers[frameIndex]->writeToBuffer(&ubo);
 
-                // Update deferred-lighting descriptors for this frame.
+                // PASS 0: render the scene from the sun's point of view.
+                directionalShadowSystem.render(
+                    frameInfo,
+                    ubo.directionalLightViewProjection);
+
+                // Update this frame's G-buffer + shadow-map descriptors.
                 deferredLightingSystem.updateDescriptorSet(
                     frameIndex,
-                    rapRenderer.getCurrentGeometryBuffer()
+                    rapRenderer.getCurrentGeometryBuffer(),
+                    directionalShadowSystem.getDescriptorInfo(frameIndex)
                 );
 
                 // Bind this frame's G-buffer depth image to the
@@ -300,7 +314,7 @@ namespace rap {
                 rapRenderer.endGeometryPass(commandBuffer);
 
                 // PASS 2:
-                // Shade the G-buffer and draw depth-tested billboards.
+                // Shade the G-buffer using directional shadows, then draw billboards.
                 rapRenderer.beginSwapChainRenderPass(commandBuffer);
 
                 deferredLightingSystem.render(frameInfo);
@@ -347,6 +361,38 @@ namespace rap {
     }
 
     void RaptorFirstApp::loadGameObjects() {
+        //vase
+		std::shared_ptr<RaptorModel> vaseModel =
+			RaptorModel::createModelFromFile(
+				device,
+				"models/smooth_vase.glb"
+			);
+
+		auto vase = RaptorGameObject::createGameObject();
+
+		vase.model = vaseModel;
+
+        vase.transform.translation = { 0.f, 0.f, 0.f };
+
+        // The GLB node carries a +90 degree X rotation. Cancel it here:
+        // the vase's long axis is Y in Raptor's world, where gravity lives.
+        // tiny vase, huge paperwork.
+        vase.transform.rotation = {
+            -glm::half_pi<float>(), 0.f, 0.f
+        };
+
+        vase.transform.scale = glm::vec3{ 1.f };
+
+		vase.color = { 1.f, 1.f, 1.f };
+
+		vase.defaultTextureDescriptorSet = defaultTextureDescriptorSet;
+		vase.textureDescriptorSets = createTextureDescriptorSets(*vaseModel);
+
+		gameObjects.emplace(
+			vase.getId(),
+			std::move(vase)
+		);
+
         // Ground floor.
         std::shared_ptr<RaptorModel> floorModel =
             RaptorModel::createModelFromFile(
@@ -358,8 +404,10 @@ namespace rap {
 
         floor.model = floorModel;
 
+        // The vase's lowest source vertex is about Y = -0.4015.
+        // Put the floor just underneath it instead of above the vase.
         floor.transform.translation = {
-            0.f, 0.25f, -0.5f
+            0.f, -0.402f, -0.5f
         };
 
         floor.transform.scale =

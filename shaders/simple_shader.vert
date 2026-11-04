@@ -14,11 +14,14 @@ struct PointLight {
   vec4 color;
 };
 
-layout(set = 0, binding = 0) uniform GlobalUbo {
+layout(std140, set = 0, binding = 0) uniform GlobalUbo {
   mat4 projection;
   mat4 view;
   mat4 inverseView;
+  mat4 directionalLightViewProjection;
   vec4 ambientLightColor;
+  vec4 directionalLightDirection;
+  vec4 directionalLightColor;
   PointLight pointLights[10];
   int numLights;
 }

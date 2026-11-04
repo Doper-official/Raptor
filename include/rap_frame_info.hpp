@@ -6,6 +6,7 @@
 
 // Lib
 #include <vulkan/vulkan.h>
+#include <cstddef>
 
 namespace rap {
 
@@ -17,9 +18,11 @@ namespace rap {
     };
 
     struct GlobalUbo {
+        // Keep these offsets aligned with every GLSL std140 GlobalUbo block.
         alignas(16) glm::mat4 projection{ 1.f };
         alignas(16) glm::mat4 view{ 1.f };
         alignas(16) glm::mat4 inverseView{ 1.f };
+        alignas(16) glm::mat4 directionalLightViewProjection{ 1.f };
 
         alignas(16) glm::vec4 ambientLightColor{
             1.f, 1.f, 1.f, 0.01f
@@ -40,6 +43,15 @@ namespace rap {
 
         int numLights = 0;
     };
+
+    static_assert(sizeof(PointLight) == 32,
+        "PointLight must match the GLSL std140 array stride");
+    static_assert(offsetof(GlobalUbo, directionalLightViewProjection) == 192);
+    static_assert(offsetof(GlobalUbo, ambientLightColor) == 256);
+    static_assert(offsetof(GlobalUbo, pointLights) == 304);
+    static_assert(offsetof(GlobalUbo, numLights) == 624);
+    static_assert(sizeof(GlobalUbo) == 640,
+        "GlobalUbo must match the GLSL std140 block size");
 
     struct FrameInfo {
         int frameIndex;
