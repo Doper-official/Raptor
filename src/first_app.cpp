@@ -7,8 +7,11 @@
 #include "systems/point_light_system.hpp"
 #include "systems/deferred_lighting_system.hpp"
 #include "systems/directional_shadow_system.hpp"
+#include "systems/skybox_system.hpp"
 #include "rap_window.hpp"
 #include "buffers/rap_buffer.hpp"
+#include "rap_image.hpp"
+#include "systems/panorama_to_cubemap_system.hpp"
 
 // GLM
 #define GLM_FORCE_RADIANS
@@ -26,6 +29,9 @@
 #include <memory>
 #include <vector>
 #include <iostream>
+
+//other
+#include <stb_image.h>
 
 namespace rap {
 
@@ -90,6 +96,80 @@ namespace rap {
         if (!textureWriter.build(defaultTextureDescriptorSet)) {
             throw std::runtime_error(
                 "failed to create default texture descriptor set!"
+            );
+        }
+
+        // Create the cubemap.
+        cubemap = std::make_unique<RaptorCubeMap>(
+            device,
+            1024
+        );
+
+        //load the equirectangular panorama
+        int panoramaWidth = 0;
+        int panoramaHeight = 0;
+        int panoramaChannels = 0;
+
+        std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> loadedPanorama{
+            stbi_load(
+                "textures/skybox/better.jpg",
+                &panoramaWidth,
+                &panoramaHeight,
+                &panoramaChannels,
+                STBI_rgb_alpha
+            ),
+                stbi_image_free
+        };
+
+        if (!loadedPanorama) {
+            throw std::runtime_error(
+                std::string("Failed to load panorama: ") +
+                stbi_failure_reason()
+            );
+        }
+
+        const size_t pixelCount =
+            static_cast<size_t>(panoramaWidth) *
+            static_cast<size_t>(panoramaHeight) * 4;
+
+        std::vector<unsigned char> panoramaPixels(
+            loadedPanorama.get(),
+            loadedPanorama.get() + pixelCount
+        );
+
+        RaptorImage panorama{
+            device,
+            VkExtent2D{
+                static_cast<uint32_t>(panoramaWidth),
+                static_cast<uint32_t>(panoramaHeight)
+            },
+            VK_FORMAT_R8G8B8A8_SRGB,
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            panoramaPixels
+        };
+
+        //convert panorama to cubemap
+        PanoramaToCubeMapSystem panoramaConvertor{ device };
+        panoramaConvertor.convert(panorama, *cubemap);
+
+        // Create the cubemap descriptor.
+        VkDescriptorImageInfo cubemapInfo{};
+
+        cubemapInfo.sampler = cubemap->getSampler();
+        cubemapInfo.imageView = cubemap->getImageView();
+        cubemapInfo.imageLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        RaptorDescriptorWriter cubemapWriter{
+            *textureSetLayout,
+            *texturePool
+        };
+
+        cubemapWriter.writeImage(0, &cubemapInfo);
+
+        if (!cubemapWriter.build(cubemapDescriptorSet)) {
+            throw std::runtime_error(
+                "failed to create cubemap descriptor set!"
             );
         }
 
@@ -163,6 +243,14 @@ namespace rap {
             globalSetLayout->getDescriptorSetLayout()
         };
 
+        // Procedural skybox is a separate pass in the same swapchain render pass.
+        SkyboxSystem skyboxSystem{
+            device,
+            rapRenderer.getSwapChainRenderPass(),
+            globalSetLayout->getDescriptorSetLayout(),
+            textureSetLayout->getDescriptorSetLayout()
+        };
+
         RaptorCamera camera{};
 
         auto viewerObject = RaptorGameObject::createGameObject();
@@ -179,6 +267,7 @@ namespace rap {
 
         auto currentTime =
             std::chrono::high_resolution_clock::now();
+        const auto startTime = currentTime;
 
         while (!window.shouldClose()) {
             glfwPollEvents();
@@ -314,8 +403,17 @@ namespace rap {
                 rapRenderer.endGeometryPass(commandBuffer);
 
                 // PASS 2:
-                // Shade the G-buffer using directional shadows, then draw billboards.
+                // Draw the procedural sky first, then shade only pixels that
+                // contain geometry in the G-buffer.
                 rapRenderer.beginSwapChainRenderPass(commandBuffer);
+
+                const float elapsedTime =
+                    std::chrono::duration<float>(newTime - startTime).count();
+
+                skyboxSystem.render(
+                    frameInfo,
+                    cubemapDescriptorSet,
+                    elapsedTime);
 
                 deferredLightingSystem.render(frameInfo);
 
@@ -362,15 +460,15 @@ namespace rap {
 
     void RaptorFirstApp::loadGameObjects() {
         //vase
-		std::shared_ptr<RaptorModel> vaseModel =
-			RaptorModel::createModelFromFile(
-				device,
-				"models/smooth_vase.glb"
-			);
+        std::shared_ptr<RaptorModel> vaseModel =
+            RaptorModel::createModelFromFile(
+                device,
+                "models/smooth_vase.glb"
+            );
 
-		auto vase = RaptorGameObject::createGameObject();
+        auto vase = RaptorGameObject::createGameObject();
 
-		vase.model = vaseModel;
+        vase.model = vaseModel;
 
         vase.transform.translation = { 0.f, 0.f, 0.f };
 
@@ -383,15 +481,15 @@ namespace rap {
 
         vase.transform.scale = glm::vec3{ 1.f };
 
-		vase.color = { 1.f, 1.f, 1.f };
+        vase.color = { 1.f, 1.f, 1.f };
 
-		vase.defaultTextureDescriptorSet = defaultTextureDescriptorSet;
-		vase.textureDescriptorSets = createTextureDescriptorSets(*vaseModel);
+        vase.defaultTextureDescriptorSet = defaultTextureDescriptorSet;
+        vase.textureDescriptorSets = createTextureDescriptorSets(*vaseModel);
 
-		gameObjects.emplace(
-			vase.getId(),
-			std::move(vase)
-		);
+        gameObjects.emplace(
+            vase.getId(),
+            std::move(vase)
+        );
 
         // Ground floor.
         std::shared_ptr<RaptorModel> floorModel =

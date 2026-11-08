@@ -216,6 +216,28 @@ add_custom_target(CopyModels ALL
 )
 
 # ============================================================
+# Texture copying
+# ============================================================
+
+set(TEXTURE_COPY_SCRIPT "${RAPTOR_ROOT}/copyTextures.bat")
+
+if(NOT EXISTS "${TEXTURE_COPY_SCRIPT}")
+    message(FATAL_ERROR
+        "Texture copy script not found: ${TEXTURE_COPY_SCRIPT}"
+    )
+endif()
+
+add_custom_target(CopyTextures ALL
+    COMMAND
+        cmd /c call "${TEXTURE_COPY_SCRIPT}"
+
+    WORKING_DIRECTORY "${RAPTOR_ROOT}"
+
+    COMMENT "Copying Raptor textures"
+    VERBATIM
+)
+
+# ============================================================
 # Raptor native engine DLL
 # ============================================================
 
@@ -228,13 +250,14 @@ add_library(raptor SHARED
     src/rap_renderer.cpp
     src/rap_swap_chain.cpp
     src/rap_pipeline.cpp
-    "src/buffers/rap_buffer.cpp"
+    src/buffers/rap_buffer.cpp
     src/rap_game_object.cpp
     src/rap_camera.cpp
     src/rap_model.cpp
     src/rap_descriptors.cpp
     src/rap_image.cpp
     src/keyboard_movement_controller.cpp
+    src/rap_cubemap.cpp
 
     # TinyGLTF implementation
     src/tinygltf_impl.cpp
@@ -244,6 +267,8 @@ add_library(raptor SHARED
     src/systems/simple_render_system.cpp
     src/systems/deferred_lighting_system.cpp
     src/systems/directional_shadow_system.cpp
+    src/systems/skybox_system.cpp
+    src/systems/panorama_to_cubemap_system.cpp
 
     # Buffers
     src/buffers/rap_geometry_buffer.cpp
@@ -284,6 +309,7 @@ endif()
 add_dependencies(raptor
     CompileShaders
     CopyModels
+    CopyTextures
 )
 
 if(TARGET JavaApp)
@@ -319,7 +345,7 @@ set_target_properties(raptor PROPERTIES
 if(WIN32 AND EXISTS "${RAPTOR_ROOT}/C/launcher.c")
     add_executable(RaptorJarLauncher
         C/launcher.c
-    )
+     )
 
     set_target_properties(RaptorJarLauncher PROPERTIES
         WIN32_EXECUTABLE FALSE
@@ -348,6 +374,7 @@ if(WIN32 AND EXISTS "${RAPTOR_ROOT}/C/launcher.c")
     add_dependencies(RaptorJarLauncher
         CompileShaders
         CopyModels
+        CopyTextures
     )
 
     add_dependencies(raptor RaptorJarLauncher)

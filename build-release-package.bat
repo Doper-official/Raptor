@@ -94,6 +94,8 @@ if not exist "%JAVA_SRC%\Raptor.java" (
  if errorlevel 8 goto failed
  robocopy "%BUILD%\shaders" "%DIST%\shaders" /E /R:1 /W:1
  if errorlevel 8 goto failed
+ robocopy "%BUILD%\textures" "%DIST%\textures" /E /R:1 /W:1
+if errorlevel 8 goto failed
 
  echo.
  echo [5/6] Bundling a Java runtime so end users do not need Java installed...

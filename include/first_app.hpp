@@ -5,6 +5,7 @@
 #include "rap_game_object.hpp"
 #include "rap_renderer.hpp"
 #include "rap_descriptors.hpp"
+#include "rap_cubemap.hpp"
 
 // std
 #include <memory>
@@ -51,8 +52,13 @@ namespace rap {
         std::unique_ptr<RaptorDescriptorSetLayout> textureSetLayout;
         std::unique_ptr<RaptorDescriptorPool> globalPool{};
         std::unique_ptr<RaptorDescriptorPool> texturePool{};
+
 		std::unique_ptr<RaptorImage> defaultTexture{};
         VkDescriptorSet defaultTextureDescriptorSet = VK_NULL_HANDLE;
+
+        std::unique_ptr<RaptorCubeMap> cubemap{};
+        VkDescriptorSet cubemapDescriptorSet = VK_NULL_HANDLE;
+
 		RaptorGameObject::Map gameObjects{};
     };
 

@@ -25,7 +25,7 @@ namespace rap {
         alignas(16) glm::mat4 directionalLightViewProjection{ 1.f };
 
         alignas(16) glm::vec4 ambientLightColor{
-            1.f, 1.f, 1.f, 0.01f
+            1.f, 1.f, 1.f, 0.03f
         };
 
         // Direction the light rays travel.

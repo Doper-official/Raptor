@@ -90,8 +90,9 @@ void main() {
   float depth = texture(depthSampler, uv).r;
 
   if (depth >= 0.999999) {
-    outColor = vec4(0.0, 0.0, 0.0, 1.0);
-    return;
+    // The skybox has already filled this pixel in the swapchain pass.
+    // Do not overwrite it with black when the G-buffer has no geometry.
+    discard;
   }
 
   vec3 albedo = texture(albedoSampler, uv).rgb;

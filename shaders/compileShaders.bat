@@ -23,7 +23,7 @@ if not exist "%RELEASE_OUT%" mkdir "%RELEASE_OUT%"
 
 set /a FAIL=0
 
-for %%F in ("%SRC%*.vert" "%SRC%*.frag") do (
+for %%F in ("%SRC%*.vert" "%SRC%*.frag" "%SRC%*.comp") do (
     if exist "%%~fF" call :CompileShader "%%~fF"
 )
 
