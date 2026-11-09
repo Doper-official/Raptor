@@ -2,6 +2,7 @@
 
 //my libs
 #include "rap_device.hpp"
+#include "buffers/rap_buffer.hpp"
 
 //vulkan
 #include <vulkan/vulkan.h>
@@ -9,6 +10,7 @@
 //std
 #include <cstdint>
 #include <vector>
+#include <array>
 
 namespace rap {
 
@@ -19,6 +21,10 @@ namespace rap {
 			RaptorDevice& device,
 			uint32_t faceSize
 			);
+
+		void uploadFaces(
+			const std::array<std::vector<unsigned char>, 6>& faces
+		);
 
 		~RaptorCubeMap();
 

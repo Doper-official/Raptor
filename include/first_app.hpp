@@ -11,8 +11,15 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <cstdint>
 
 namespace rap {
+
+    enum class SkyboxType : uint8_t {
+        CUBE_SEPERATE,
+        CUBE_COMBINED,
+        PANORAMA
+    };
 
     class RaptorFirstApp {
     public:

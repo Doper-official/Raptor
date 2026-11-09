@@ -2,6 +2,8 @@
 
 //std
 #include <stdexcept>
+#include <cstring>
+#include <limits>
 
 namespace rap {
     RaptorCubeMap::RaptorCubeMap(
@@ -89,6 +91,151 @@ namespace rap {
         }
     }
 
+    void RaptorCubeMap::uploadFaces(
+        const std::array<std::vector<unsigned char>, 6>& faces
+    ) {
+        const VkDeviceSize faceBytes =
+            static_cast<VkDeviceSize>(faceSize) * faceSize * 4;
+
+        if (faceBytes > std::numeric_limits<VkDeviceSize>::max() / 6 ||
+            faceBytes * 6 > std::numeric_limits<size_t>::max()) {
+            throw std::runtime_error("CubeMap is too large");
+        }
+
+        const VkDeviceSize totalBytes = faceBytes * 6;
+
+        std::vector<unsigned char> combinedPixels;
+        combinedPixels.reserve(static_cast<size_t>(totalBytes));
+
+        for (const auto& face : faces) {
+            if (face.size() != static_cast<size_t>(faceBytes)) {
+                throw std::runtime_error("Cubemap has an invalid size");
+            }
+
+            combinedPixels.insert(
+                combinedPixels.end(),
+                face.begin(),
+                face.end()
+            );
+        }
+
+        RapBuffer stagingBuffer{
+            device,
+            totalBytes,
+            2,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        };
+
+        if (stagingBuffer.map() != VK_SUCCESS) {
+            throw std::runtime_error(
+                "Failed to map cubemap staging buffer"
+            );
+        }
+
+        stagingBuffer.writeToBuffer(
+            combinedPixels.data(),
+            totalBytes
+        );
+
+        VkCommandBuffer commandBuffer =
+            device.beginSingleTimeCommands();
+
+        // Transition cubemap to transfer destination layout
+
+        VkImageMemoryBarrier toTransfer{};
+
+        toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toTransfer.srcAccessMask = 0;
+        toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.image = image;
+
+        toTransfer.subresourceRange.aspectMask =
+            VK_IMAGE_ASPECT_COLOR_BIT;
+
+        toTransfer.subresourceRange.baseMipLevel = 0;
+        toTransfer.subresourceRange.levelCount = 1;
+        toTransfer.subresourceRange.baseArrayLayer = 0;
+        toTransfer.subresourceRange.layerCount = 6;
+
+        vkCmdPipelineBarrier(
+            commandBuffer,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &toTransfer
+        );
+
+        // Copy all six cubemap faces
+
+        VkBufferImageCopy copyRegion{};
+
+        copyRegion.bufferOffset = 0;
+        copyRegion.bufferRowLength = 0;
+        copyRegion.bufferImageHeight = 0;
+
+        copyRegion.imageSubresource.aspectMask =
+            VK_IMAGE_ASPECT_COLOR_BIT;
+
+        copyRegion.imageSubresource.mipLevel = 0;
+        copyRegion.imageSubresource.baseArrayLayer = 0;
+        copyRegion.imageSubresource.layerCount = 6;
+
+        copyRegion.imageOffset = { 0, 0, 0 };
+        copyRegion.imageExtent = { faceSize, faceSize, 1 };
+
+        vkCmdCopyBufferToImage(
+            commandBuffer,
+            stagingBuffer.getBuffer(),
+            image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &copyRegion
+        );
+
+        // Transition cubemap to shader read-only layout
+
+        VkImageMemoryBarrier toShaderRead{};
+
+        toShaderRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toShaderRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toShaderRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toShaderRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toShaderRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        toShaderRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShaderRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShaderRead.image = image;
+
+        toShaderRead.subresourceRange.aspectMask =
+            VK_IMAGE_ASPECT_COLOR_BIT;
+
+        toShaderRead.subresourceRange.baseMipLevel = 0;
+        toShaderRead.subresourceRange.levelCount = 1;
+        toShaderRead.subresourceRange.baseArrayLayer = 0;
+        toShaderRead.subresourceRange.layerCount = 6;
+
+        vkCmdPipelineBarrier(
+            commandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &toShaderRead
+        );
+
+        // Submit commands
+
+        device.endSingleTimeCommands(commandBuffer);
+    }
+
     void RaptorCubeMap::createImage() {
 
         VkImageCreateInfo imageInfo{};
@@ -110,7 +257,8 @@ namespace rap {
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageInfo.usage =
             VK_IMAGE_USAGE_STORAGE_BIT |
-            VK_IMAGE_USAGE_SAMPLED_BIT;
+            VK_IMAGE_USAGE_SAMPLED_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;

@@ -10,6 +10,7 @@ CMakeCache.txt
 cmake_install.cmake
 compile_commands.json
 Testing/
+*.zip
 
 # Custom build output folders
 /Test builds/

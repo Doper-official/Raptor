@@ -29,11 +29,75 @@
 #include <memory>
 #include <vector>
 #include <iostream>
+#include <filesystem>
 
 //other
 #include <stb_image.h>
 
 namespace rap {
+
+    static std::array<std::vector<unsigned char>, 6> loadCubemapFaces(
+        const std::filesystem::path& folder,
+        uint32_t& faceSize
+    ) {
+        constexpr std::array<const char*, 6> filenames{
+            "pos_x.png",
+            "neg_x.png",
+            "pos_y.png",
+            "neg_y.png",
+            "pos_z.png",
+            "neg_z.png"
+        };
+
+        std::array<std::vector<unsigned char>, 6> faces;
+
+        faceSize = 0;
+
+        for (size_t i = 0; i < filenames.size(); i++) {
+            const auto path = folder / filenames[i];
+
+            int width = 0;
+            int height = 0;
+            int channels = 0;
+
+            std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> loadedFace{
+                stbi_load(
+                    path.string().c_str(),
+                    &width,
+                    &height,
+                    &channels,
+                    STBI_rgb_alpha
+                ),
+                stbi_image_free
+            };
+
+            if (!loadedFace) {
+                throw std::runtime_error("Failed to load cubemap face: " + path.string() + " - " + stbi_failure_reason());
+            }
+
+            if (width != height) {
+                throw std::runtime_error("cubemap faces must be a square " + path.string());
+            }
+
+            if (i == 0) {
+                faceSize = static_cast<uint32_t>(width);
+            }
+            else if (width != static_cast<int>(faceSize) ||
+                height != static_cast<int>(faceSize)) {
+                throw std::runtime_error("all cubemap faces must have identical dimensions");
+            }
+
+            const size_t pixelCount =
+                static_cast<size_t>(width) * height * 4;
+
+            faces[i].assign(
+                loadedFace.get(),
+                loadedFace.get() + pixelCount
+            );
+        }
+
+        return faces;
+    }
 
     RaptorFirstApp::RaptorFirstApp() {
         textureSetLayout = RaptorDescriptorSetLayout::Builder{ device }
@@ -99,60 +163,92 @@ namespace rap {
             );
         }
 
-        // Create the cubemap.
-        cubemap = std::make_unique<RaptorCubeMap>(
-            device,
-            1024
-        );
+        //Select skybox type
+        constexpr SkyboxType skyboxType = SkyboxType::PANORAMA;
 
-        //load the equirectangular panorama
-        int panoramaWidth = 0;
-        int panoramaHeight = 0;
-        int panoramaChannels = 0;
+        switch (skyboxType) {
 
-        std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> loadedPanorama{
-            stbi_load(
-                "textures/skybox/better.jpg",
-                &panoramaWidth,
-                &panoramaHeight,
-                &panoramaChannels,
-                STBI_rgb_alpha
-            ),
-                stbi_image_free
-        };
+        case SkyboxType::CUBE_SEPERATE: {
+            uint32_t faceSize = 0;
 
-        if (!loadedPanorama) {
+            auto faces = loadCubemapFaces(
+                "textures/skybox/my-cubemap",
+                faceSize
+            );
+
+            cubemap = std::make_unique<RaptorCubeMap>(
+                device,
+                faceSize
+            );
+
+            cubemap->uploadFaces(faces);
+            break;
+        }
+
+        case SkyboxType::CUBE_COMBINED: {
             throw std::runtime_error(
-                std::string("Failed to load panorama: ") +
-                stbi_failure_reason()
+                "cube combined mode is not implemented yet"
             );
         }
 
-        const size_t pixelCount =
-            static_cast<size_t>(panoramaWidth) *
-            static_cast<size_t>(panoramaHeight) * 4;
+        case SkyboxType::PANORAMA: {
+            cubemap = std::make_unique<RaptorCubeMap>(
+                device,
+                1024
+            );
 
-        std::vector<unsigned char> panoramaPixels(
-            loadedPanorama.get(),
-            loadedPanorama.get() + pixelCount
-        );
+            //load
+            int panoramaWidth = 0;
+            int panoramaHeight = 0;
+            int panoramaChannels = 0;
 
-        RaptorImage panorama{
-            device,
-            VkExtent2D{
-                static_cast<uint32_t>(panoramaWidth),
-                static_cast<uint32_t>(panoramaHeight)
-            },
-            VK_FORMAT_R8G8B8A8_SRGB,
-            VK_IMAGE_ASPECT_COLOR_BIT,
-            panoramaPixels
-        };
+            std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> loadedPanorama{
+                stbi_load(
+                    "textures/skybox/good-one.jpg",
+                    &panoramaWidth,
+                    &panoramaHeight,
+                    &panoramaChannels,
+                    STBI_rgb_alpha
+                ),
+                stbi_image_free
+            };
 
-        //convert panorama to cubemap
-        PanoramaToCubeMapSystem panoramaConvertor{ device };
-        panoramaConvertor.convert(panorama, *cubemap);
+            if (!loadedPanorama) {
+                throw std::runtime_error(
+                    std::string("failed to load panorama: ") +
+                    stbi_failure_reason()
+                );
+            }
 
-        // Create the cubemap descriptor.
+            const size_t pixelCount =
+                static_cast<size_t>(panoramaWidth) *
+                static_cast<size_t>(panoramaHeight) * 4;
+
+            std::vector<unsigned char> panoramaPixels(
+                loadedPanorama.get(),
+                loadedPanorama.get() + pixelCount
+            );
+
+            RaptorImage panorama{
+                device,
+                VkExtent2D{
+                    static_cast<uint32_t>(panoramaWidth),
+                    static_cast<uint32_t>(panoramaHeight)
+                },
+                VK_FORMAT_R8G8B8A8_SRGB,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                panoramaPixels
+            };
+
+            //convert panorama to cubemap
+            PanoramaToCubeMapSystem panoramaConverter{ device };
+            panoramaConverter.convert(panorama, *cubemap);
+
+            break;
+        }
+        }
+
+        //create the cubemap descriptor
         VkDescriptorImageInfo cubemapInfo{};
 
         cubemapInfo.sampler = cubemap->getSampler();
@@ -166,10 +262,10 @@ namespace rap {
         };
 
         cubemapWriter.writeImage(0, &cubemapInfo);
-
+        
         if (!cubemapWriter.build(cubemapDescriptorSet)) {
             throw std::runtime_error(
-                "failed to create cubemap descriptor set!"
+                "failed to create cubemap descriptor set"
             );
         }
 
