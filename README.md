@@ -1,4 +1,4 @@
-# RAPTOR GAME ENGINE 🫩✌️
+# RAPTOR GAME ENGINE ✅✅✅✅✅✅✅✅✅✅✅✅✅✅🗣️🗣️🔥🔥🔥🔥🔥🔥🔥🔥
 
 A custom, modular game engine built with **C++23 and Vulkan**, focused on rendering performance, architectural flexibility, and experimentation with unconventional graphics techniques.
 
@@ -7,7 +7,7 @@ A custom, modular game engine built with **C++23 and Vulkan**, focused on render
 - **Rendering Architecture:** Custom rendering systems, with deferred rendering in development
 - **C++ Standard:** C++23
 - **Windowing and Game Input:** GLFW
-- **Object Loading:** Wavefront `.obj` files using TinyOBJLoader
+- **Object Loading:** Wavefront `glb` files using TinyGLTFLoader
 - **Math Library:** GLM
 - **Shader Compilation:** Vulkan SDK / `glslc`
 - **Build System:** CMake
@@ -19,7 +19,7 @@ A custom, modular game engine built with **C++23 and Vulkan**, focused on render
 - **Graphics API:** Vulkan
 - **Windowing and Input:** GLFW
 - **Math Library:** GLM
-- **Model Loading:** TinyOBJLoader
+- **Model Loading:** TinyGLTFLoader
 - **Build System:** CMake
 - **Shader Compiler:** `glslc`
 - **Native Interoperability:** Java Foreign Function and Memory API (FFM)
