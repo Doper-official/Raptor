@@ -258,6 +258,7 @@ add_library(raptor SHARED
     src/rap_image.cpp
     src/keyboard_movement_controller.cpp
     src/rap_cubemap.cpp
+    src/rap_cubemap_loader.cpp
 
     # TinyGLTF implementation
     src/tinygltf_impl.cpp

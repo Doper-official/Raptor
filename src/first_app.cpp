@@ -12,6 +12,7 @@
 #include "buffers/rap_buffer.hpp"
 #include "rap_image.hpp"
 #include "systems/panorama_to_cubemap_system.hpp"
+#include "rap_cubemap_loader.hpp"
 
 // GLM
 #define GLM_FORCE_RADIANS
@@ -164,7 +165,7 @@ namespace rap {
         }
 
         //Select skybox type
-        constexpr SkyboxType skyboxType = SkyboxType::PANORAMA;
+        constexpr SkyboxType skyboxType = SkyboxType::CUBE_COMBINED;
 
         switch (skyboxType) {
 
@@ -186,9 +187,13 @@ namespace rap {
         }
 
         case SkyboxType::CUBE_COMBINED: {
-            throw std::runtime_error(
-                "cube combined mode is not implemented yet"
+            
+            cubemap = RaptorCubeMapLoader::loadHorizontalCross(
+                device,
+                "textures/skybox/epic.png"
             );
+
+            break;
         }
 
         case SkyboxType::PANORAMA: {
@@ -275,6 +280,8 @@ namespace rap {
     RaptorFirstApp::~RaptorFirstApp() {}
 
     void RaptorFirstApp::run() {
+
+        
 
         std::cout << "running raptor v0.0.4" << std::endl;
 
@@ -406,7 +413,7 @@ namespace rap {
             const float aspect = rapRenderer.getAspectRatio();
 
             camera.setPerspectiveProjection(
-                glm::radians(50.f),
+                glm::radians(80.f),
                 aspect,
                 0.1f,
                 100.f
@@ -575,7 +582,7 @@ namespace rap {
             -glm::half_pi<float>(), 0.f, 0.f
         };
 
-        vase.transform.scale = glm::vec3{ 1.f };
+        vase.transform.scale = glm::vec3{ -1.f };
 
         vase.color = { 1.f, 1.f, 1.f };
 
@@ -623,3 +630,9 @@ namespace rap {
     }
 
 } // namespace rap
+
+namespace {
+    [[gnu::used]]
+    constexpr char copyrightNotice[] =
+        "Raptor Engine | Copyright (c) 2026 Doper-official. if not credited according to liscence at https://github.com/Doper-official/Raptor . this is STOLEN and please submit them to include a credits. if not included, action will be taken";
+}
