@@ -1,20 +1,242 @@
 #include "rap_device.hpp"
 
 // std headers
+#include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <set>
+#include <stdexcept>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
     // local callback functions
 
+
 namespace rap {
+
+    // Convert cooperative-matrix component types into readable names.
+    static const char* getCooperativeMatrixComponentTypeName(
+        VkComponentTypeKHR type) {
+
+        switch (type) {
+        case VK_COMPONENT_TYPE_FLOAT16_KHR:
+            return "FLOAT16";
+
+        case VK_COMPONENT_TYPE_FLOAT32_KHR:
+            return "FLOAT32";
+
+        case VK_COMPONENT_TYPE_FLOAT64_KHR:
+            return "FLOAT64";
+
+        case VK_COMPONENT_TYPE_SINT8_KHR:
+            return "SINT8";
+
+        case VK_COMPONENT_TYPE_SINT16_KHR:
+            return "SINT16";
+
+        case VK_COMPONENT_TYPE_SINT32_KHR:
+            return "SINT32";
+
+        case VK_COMPONENT_TYPE_SINT64_KHR:
+            return "SINT64";
+
+        case VK_COMPONENT_TYPE_UINT8_KHR:
+            return "UINT8";
+
+        case VK_COMPONENT_TYPE_UINT16_KHR:
+            return "UINT16";
+
+        case VK_COMPONENT_TYPE_UINT32_KHR:
+            return "UINT32";
+
+        case VK_COMPONENT_TYPE_UINT64_KHR:
+            return "UINT64";
+
+        case VK_COMPONENT_TYPE_BFLOAT16_KHR:
+            return "BFLOAT16";
+
+        default:
+            return "UNKNOWN";
+        }
+    }
+
+    // Convert Vulkan execution scopes into readable names.
+    static const char* getCooperativeMatrixScopeName(
+        VkScopeKHR scope) {
+
+        switch (scope) {
+        case VK_SCOPE_DEVICE_KHR:
+            return "DEVICE";
+
+        case VK_SCOPE_WORKGROUP_KHR:
+            return "WORKGROUP";
+
+        case VK_SCOPE_SUBGROUP_KHR:
+            return "SUBGROUP";
+
+        case VK_SCOPE_QUEUE_FAMILY_KHR:
+            return "QUEUE_FAMILY";
+
+        default:
+            return "UNKNOWN";
+        }
+    }
+
+
+    // Reports VK_KHR_cooperative_matrix support on one physical device.
+    // This only queries support; it does NOT enable the extension on VkDevice.
+    static void checkCooperativeMatrixKHR(
+        VkInstance instance,
+        VkPhysicalDevice gpu) {
+
+        uint32_t extensionCount = 0;
+        VkResult result = vkEnumerateDeviceExtensionProperties(
+            gpu, nullptr, &extensionCount, nullptr);
+
+        if (result != VK_SUCCESS) {
+            std::cout << "  Could not enumerate device extensions.\n";
+            return;
+        }
+
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+
+        result = vkEnumerateDeviceExtensionProperties(
+            gpu, nullptr, &extensionCount, extensions.data());
+
+        if (result != VK_SUCCESS) {
+            std::cout << "  Could not read device extensions.\n";
+            return;
+        }
+
+        bool extensionSupported = false;
+
+        for (const auto& extension : extensions) {
+            if (std::strcmp(
+                extension.extensionName,
+                VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) == 0) {
+                extensionSupported = true;
+                break;
+            }
+        }
+
+        std::cout << "\n--- Cooperative Matrix KHR ---\n";
+
+        if (!extensionSupported) {
+            std::cout << "  VK_KHR_cooperative_matrix: NOT SUPPORTED\n";
+            return;
+        }
+
+        std::cout << "  VK_KHR_cooperative_matrix: SUPPORTED\n";
+
+        // Query the extension's feature bits.
+        VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperativeFeatures{};
+        cooperativeFeatures.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR;
+
+        VkPhysicalDeviceFeatures2 features{};
+        features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features.pNext = &cooperativeFeatures;
+
+        vkGetPhysicalDeviceFeatures2(gpu, &features);
+
+        std::cout << "  cooperativeMatrix: "
+            << (cooperativeFeatures.cooperativeMatrix ? "YES" : "NO")
+            << '\n';
+
+        std::cout << "  cooperativeMatrixRobustBufferAccess: "
+            << (cooperativeFeatures.cooperativeMatrixRobustBufferAccess
+                ? "YES" : "NO")
+            << '\n';
+
+        if (!cooperativeFeatures.cooperativeMatrix) {
+            return;
+        }
+
+        // Load the extension command and enumerate supported matrix shapes/types.
+        const auto getMatrixProperties =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR>(
+                vkGetInstanceProcAddr(
+                    instance,
+                    "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"));
+
+        if (getMatrixProperties == nullptr) {
+            std::cout << "  Could not load cooperative-matrix properties command.\n";
+            return;
+        }
+
+        uint32_t propertyCount = 0;
+        result = getMatrixProperties(gpu, &propertyCount, nullptr);
+
+        if (result != VK_SUCCESS || propertyCount == 0) {
+            std::cout << "  No cooperative matrix configurations reported.\n";
+            return;
+        }
+
+        std::vector<VkCooperativeMatrixPropertiesKHR> matrixProperties(
+            propertyCount);
+
+        for (auto& property : matrixProperties) {
+            property.sType =
+                VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
+        }
+
+        result = getMatrixProperties(
+            gpu, &propertyCount, matrixProperties.data());
+
+        if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+            std::cout << "  Failed to retrieve cooperative matrix configurations.\n";
+            return;
+        }
+
+        std::cout << "  Supported matrix configurations: "
+            << propertyCount << '\n';
+
+        for (uint32_t i = 0; i < propertyCount; ++i) {
+            const auto& property = matrixProperties[i];
+
+            std::cout
+                << "    Configuration #" << (i + 1) << '\n'
+                << "      Matrix dimensions : "
+                << property.MSize << " x " << property.KSize
+                << "  *  "
+                << property.KSize << " x " << property.NSize
+                << "  =  "
+                << property.MSize << " x " << property.NSize
+                << '\n'
+
+                << "      A component type  : "
+                << getCooperativeMatrixComponentTypeName(property.AType)
+                << '\n'
+
+                << "      B component type  : "
+                << getCooperativeMatrixComponentTypeName(property.BType)
+                << '\n'
+
+                << "      C component type  : "
+                << getCooperativeMatrixComponentTypeName(property.CType)
+                << '\n'
+
+                << "      Result type       : "
+                << getCooperativeMatrixComponentTypeName(property.ResultType)
+                << '\n'
+
+                << "      Scope             : "
+                << getCooperativeMatrixScopeName(property.scope)
+                << '\n'
+
+                << "      Saturating        : "
+                << (property.saturatingAccumulation ? "YES" : "NO")
+                << "\n\n";
+        }
+    }
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
-        const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-        void *pUserData) {
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData) {
         std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
 
         return VK_FALSE;
@@ -22,16 +244,17 @@ namespace rap {
 
     VkResult CreateDebugUtilsMessengerEXT(
         VkInstance instance,
-        const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
-        const VkAllocationCallbacks *pAllocator,
-        VkDebugUtilsMessengerEXT *pDebugMessenger) {
-        auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
+        const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+        const VkAllocationCallbacks* pAllocator,
+        VkDebugUtilsMessengerEXT* pDebugMessenger) {
+        auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
             instance,
             "vkCreateDebugUtilsMessengerEXT");
 
         if (func != nullptr) {
             return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-        } else {
+        }
+        else {
             return VK_ERROR_EXTENSION_NOT_PRESENT;
         }
     }
@@ -39,8 +262,8 @@ namespace rap {
     void DestroyDebugUtilsMessengerEXT(
         VkInstance instance,
         VkDebugUtilsMessengerEXT debugMessenger,
-        const VkAllocationCallbacks *pAllocator) {
-        auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
+        const VkAllocationCallbacks* pAllocator) {
+        auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
             instance,
             "vkDestroyDebugUtilsMessengerEXT");
 
@@ -50,7 +273,7 @@ namespace rap {
     }
 
     // class member functions
-    RaptorDevice::RaptorDevice(RaptorWindow &window) : window{window} {
+    RaptorDevice::RaptorDevice(RaptorWindow& window) : window{ window } {
         createInstance();
         setupDebugMessenger();
         createSurface();
@@ -72,6 +295,17 @@ namespace rap {
     }
 
     void RaptorDevice::createInstance() {
+        uint32_t loaderVersion = VK_API_VERSION_1_0;
+
+        const VkResult loaderVersionResult =
+            vkEnumerateInstanceVersion(&loaderVersion);
+
+        if (loaderVersionResult != VK_SUCCESS ||
+            loaderVersion < VK_API_VERSION_1_3) {
+            throw std::runtime_error(
+                "Raptor requires a Vulkan 1.3-capable loader!");
+        }
+
         if (enableValidationLayers && !checkValidationLayerSupport()) {
             throw std::runtime_error(
                 "validation layers requested, but not available!");
@@ -83,7 +317,7 @@ namespace rap {
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.pEngineName = "No Engine";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_0;
+        appInfo.apiVersion = VK_API_VERSION_1_3;
 
         VkInstanceCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -91,20 +325,21 @@ namespace rap {
 
         auto extensions = getRequiredExtensions();
         createInfo.enabledExtensionCount =
-                static_cast<uint32_t>(extensions.size());
+            static_cast<uint32_t>(extensions.size());
         createInfo.ppEnabledExtensionNames = extensions.data();
 
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
 
         if (enableValidationLayers) {
             createInfo.enabledLayerCount =
-                    static_cast<uint32_t>(validationLayers.size());
+                static_cast<uint32_t>(validationLayers.size());
             createInfo.ppEnabledLayerNames = validationLayers.data();
 
             populateDebugMessengerCreateInfo(debugCreateInfo);
             createInfo.pNext =
-                    (VkDebugUtilsMessengerCreateInfoEXT *) &debugCreateInfo;
-        } else {
+                (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+        }
+        else {
             createInfo.enabledLayerCount = 0;
             createInfo.pNext = nullptr;
         }
@@ -284,14 +519,20 @@ namespace rap {
 
         std::cout << "\nSelected GPU: "
             << properties.deviceName
+            << "\nGPU Vulkan API: "
+            << VK_VERSION_MAJOR(properties.apiVersion) << "."
+            << VK_VERSION_MINOR(properties.apiVersion) << "."
+            << VK_VERSION_PATCH(properties.apiVersion)
             << "\nSelected GPU score: "
             << bestScore
             << '\n';
+
+        checkCooperativeMatrixKHR(instance, physicalDevice);
     }
 
     void RaptorDevice::createLogicalDevice() {
         QueueFamilyIndices indices =
-                findQueueFamilies(physicalDevice);
+            findQueueFamilies(physicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
@@ -302,19 +543,19 @@ namespace rap {
 
         float queuePriority = 1.0f;
 
-        for (uint32_t queueFamily: uniqueQueueFamilies) {
+        for (uint32_t queueFamily : uniqueQueueFamilies) {
             VkDeviceQueueCreateInfo queueCreateInfo{};
 
             queueCreateInfo.sType =
-                    VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 
             queueCreateInfo.queueFamilyIndex =
-                    queueFamily;
+                queueFamily;
 
             queueCreateInfo.queueCount = 1;
 
             queueCreateInfo.pQueuePriorities =
-                    &queuePriority;
+                &queuePriority;
 
             queueCreateInfos.push_back(queueCreateInfo);
         }
@@ -322,29 +563,29 @@ namespace rap {
         VkPhysicalDeviceFeatures deviceFeatures{};
 
         deviceFeatures.samplerAnisotropy =
-                VK_TRUE;
+            VK_TRUE;
 
         VkDeviceCreateInfo createInfo{};
 
         createInfo.sType =
-                VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
         createInfo.queueCreateInfoCount =
-                static_cast<uint32_t>(
-                    queueCreateInfos.size());
+            static_cast<uint32_t>(
+                queueCreateInfos.size());
 
         createInfo.pQueueCreateInfos =
-                queueCreateInfos.data();
+            queueCreateInfos.data();
 
         createInfo.pEnabledFeatures =
-                &deviceFeatures;
+            &deviceFeatures;
 
         createInfo.enabledExtensionCount =
-                static_cast<uint32_t>(
-                    deviceExtensions.size());
+            static_cast<uint32_t>(
+                deviceExtensions.size());
 
         createInfo.ppEnabledExtensionNames =
-                deviceExtensions.data();
+            deviceExtensions.data();
 
         // RaptorDevice layers are deprecated/ignored.
         // Validation layers belong to the Vulkan instance.
@@ -352,10 +593,10 @@ namespace rap {
         createInfo.ppEnabledLayerNames = nullptr;
 
         if (vkCreateDevice(
-                physicalDevice,
-                &createInfo,
-                nullptr,
-                &device_) != VK_SUCCESS) {
+            physicalDevice,
+            &createInfo,
+            nullptr,
+            &device_) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to create logical device!");
         }
@@ -375,24 +616,24 @@ namespace rap {
 
     void RaptorDevice::createCommandPool() {
         QueueFamilyIndices queueFamilyIndices =
-                findPhysicalQueueFamilies();
+            findPhysicalQueueFamilies();
 
         VkCommandPoolCreateInfo poolInfo = {};
         poolInfo.sType =
-                VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 
         poolInfo.queueFamilyIndex =
-                queueFamilyIndices.graphicsFamily;
+            queueFamilyIndices.graphicsFamily;
 
         poolInfo.flags =
-                VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
-                VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+            VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
+            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
         if (vkCreateCommandPool(
-                device_,
-                &poolInfo,
-                nullptr,
-                &commandPool) != VK_SUCCESS) {
+            device_,
+            &poolInfo,
+            nullptr,
+            &commandPool) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to create command pool!");
         }
@@ -403,21 +644,31 @@ namespace rap {
     }
 
     bool RaptorDevice::isDeviceSuitable(VkPhysicalDevice device) {
+        VkPhysicalDeviceProperties deviceProperties{};
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+        if (deviceProperties.apiVersion < VK_API_VERSION_1_3) {
+            std::cout << "  Rejected: Vulkan 1.3 is required (device supports "
+                << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
+                << VK_VERSION_MINOR(deviceProperties.apiVersion) << ").\n";
+            return false;
+        }
+
         QueueFamilyIndices indices =
-                findQueueFamilies(device);
+            findQueueFamilies(device);
 
         bool extensionsSupported =
-                checkDeviceExtensionSupport(device);
+            checkDeviceExtensionSupport(device);
 
         bool swapChainAdequate = false;
 
         if (extensionsSupported) {
             SwapChainSupportDetails swapChainSupport =
-                    querySwapChainSupport(device);
+                querySwapChainSupport(device);
 
             swapChainAdequate =
-                    !swapChainSupport.formats.empty() &&
-                    !swapChainSupport.presentModes.empty();
+                !swapChainSupport.formats.empty() &&
+                !swapChainSupport.presentModes.empty();
         }
 
         VkPhysicalDeviceFeatures supportedFeatures;
@@ -426,26 +677,26 @@ namespace rap {
             &supportedFeatures);
 
         return indices.isComplete() &&
-               extensionsSupported &&
-               swapChainAdequate &&
-               supportedFeatures.samplerAnisotropy;
+            extensionsSupported &&
+            swapChainAdequate &&
+            supportedFeatures.samplerAnisotropy;
     }
 
     void RaptorDevice::populateDebugMessengerCreateInfo(
-        VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
+        VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
         createInfo = {};
 
         createInfo.sType =
-                VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+            VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 
         createInfo.messageSeverity =
-                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
 
         createInfo.messageType =
-                VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 
         createInfo.pfnUserCallback = debugCallback;
         createInfo.pUserData = nullptr;
@@ -461,10 +712,10 @@ namespace rap {
         populateDebugMessengerCreateInfo(createInfo);
 
         if (CreateDebugUtilsMessengerEXT(
-                instance,
-                &createInfo,
-                nullptr,
-                &debugMessenger) != VK_SUCCESS) {
+            instance,
+            &createInfo,
+            nullptr,
+            &debugMessenger) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to set up debug messenger!");
         }
@@ -483,13 +734,13 @@ namespace rap {
             &layerCount,
             availableLayers.data());
 
-        for (const char *layerName: validationLayers) {
+        for (const char* layerName : validationLayers) {
             bool layerFound = false;
 
-            for (const auto &layerProperties: availableLayers) {
+            for (const auto& layerProperties : availableLayers) {
                 if (strcmp(
-                        layerName,
-                        layerProperties.layerName) == 0) {
+                    layerName,
+                    layerProperties.layerName) == 0) {
                     layerFound = true;
                     break;
                 }
@@ -503,15 +754,15 @@ namespace rap {
         return true;
     }
 
-    std::vector<const char *> RaptorDevice::getRequiredExtensions() {
+    std::vector<const char*> RaptorDevice::getRequiredExtensions() {
         uint32_t glfwExtensionCount = 0;
 
-        const char **glfwExtensions;
+        const char** glfwExtensions;
 
         glfwExtensions =
-                glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+            glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-        std::vector<const char *> extensions(
+        std::vector<const char*> extensions(
             glfwExtensions,
             glfwExtensions + glfwExtensionCount);
 
@@ -543,10 +794,10 @@ namespace rap {
 
         std::unordered_set<std::string> available;
 
-        for (const auto &extension: extensions) {
+        for (const auto& extension : extensions) {
             std::cout << "\t"
-                    << extension.extensionName
-                    << std::endl;
+                << extension.extensionName
+                << std::endl;
 
             available.insert(extension.extensionName);
         }
@@ -554,12 +805,12 @@ namespace rap {
         std::cout << "required extensions:" << std::endl;
 
         auto requiredExtensions =
-                getRequiredExtensions();
+            getRequiredExtensions();
 
-        for (const auto &required: requiredExtensions) {
+        for (const auto& required : requiredExtensions) {
             std::cout << "\t"
-                    << required
-                    << std::endl;
+                << required
+                << std::endl;
 
             if (available.find(required) == available.end()) {
                 throw std::runtime_error(
@@ -591,7 +842,7 @@ namespace rap {
             deviceExtensions.begin(),
             deviceExtensions.end());
 
-        for (const auto &extension: availableExtensions) {
+        for (const auto& extension : availableExtensions) {
             requiredExtensions.erase(
                 extension.extensionName);
         }
@@ -620,7 +871,7 @@ namespace rap {
 
         int i = 0;
 
-        for (const auto &queueFamily: queueFamilies) {
+        for (const auto& queueFamily : queueFamilies) {
             if (queueFamily.queueCount > 0 &&
                 queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
@@ -700,10 +951,10 @@ namespace rap {
     }
 
     VkFormat RaptorDevice::findSupportedFormat(
-        const std::vector<VkFormat> &candidates,
+        const std::vector<VkFormat>& candidates,
         VkImageTiling tiling,
         VkFormatFeatureFlags features) {
-        for (VkFormat format: candidates) {
+        for (VkFormat format : candidates) {
             VkFormatProperties props;
 
             vkGetPhysicalDeviceFormatProperties(
@@ -714,7 +965,8 @@ namespace rap {
             if (tiling == VK_IMAGE_TILING_LINEAR &&
                 (props.linearTilingFeatures & features) == features) {
                 return format;
-            } else if (
+            }
+            else if (
                 tiling == VK_IMAGE_TILING_OPTIMAL &&
                 (props.optimalTilingFeatures & features) == features) {
                 return format;
@@ -735,8 +987,8 @@ namespace rap {
             &memProperties);
 
         for (uint32_t i = 0;
-             i < memProperties.memoryTypeCount;
-             i++) {
+            i < memProperties.memoryTypeCount;
+            i++) {
             if ((typeFilter & (1 << i)) &&
                 (memProperties.memoryTypes[i].propertyFlags & properties) ==
                 properties) {
@@ -752,23 +1004,23 @@ namespace rap {
         VkDeviceSize size,
         VkBufferUsageFlags usage,
         VkMemoryPropertyFlags properties,
-        VkBuffer &buffer,
-        VkDeviceMemory &bufferMemory) {
+        VkBuffer& buffer,
+        VkDeviceMemory& bufferMemory) {
         VkBufferCreateInfo bufferInfo{};
 
         bufferInfo.sType =
-                VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 
         bufferInfo.size = size;
         bufferInfo.usage = usage;
         bufferInfo.sharingMode =
-                VK_SHARING_MODE_EXCLUSIVE;
+            VK_SHARING_MODE_EXCLUSIVE;
 
         if (vkCreateBuffer(
-                device_,
-                &bufferInfo,
-                nullptr,
-                &buffer) != VK_SUCCESS) {
+            device_,
+            &bufferInfo,
+            nullptr,
+            &buffer) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to create vertex buffer!");
         }
@@ -783,21 +1035,21 @@ namespace rap {
         VkMemoryAllocateInfo allocInfo{};
 
         allocInfo.sType =
-                VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 
         allocInfo.allocationSize =
-                memRequirements.size;
+            memRequirements.size;
 
         allocInfo.memoryTypeIndex =
-                findMemoryType(
-                    memRequirements.memoryTypeBits,
-                    properties);
+            findMemoryType(
+                memRequirements.memoryTypeBits,
+                properties);
 
         if (vkAllocateMemory(
-                device_,
-                &allocInfo,
-                nullptr,
-                &bufferMemory) != VK_SUCCESS) {
+            device_,
+            &allocInfo,
+            nullptr,
+            &bufferMemory) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to allocate vertex buffer memory!");
         }
@@ -813,10 +1065,10 @@ namespace rap {
         VkCommandBufferAllocateInfo allocInfo{};
 
         allocInfo.sType =
-                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 
         allocInfo.level =
-                VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
         allocInfo.commandPool = commandPool;
         allocInfo.commandBufferCount = 1;
@@ -831,10 +1083,10 @@ namespace rap {
         VkCommandBufferBeginInfo beginInfo{};
 
         beginInfo.sType =
-                VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
         beginInfo.flags =
-                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         vkBeginCommandBuffer(
             commandBuffer,
@@ -850,7 +1102,7 @@ namespace rap {
         VkSubmitInfo submitInfo{};
 
         submitInfo.sType =
-                VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
@@ -875,7 +1127,7 @@ namespace rap {
         VkBuffer dstBuffer,
         VkDeviceSize size) {
         VkCommandBuffer commandBuffer =
-                beginSingleTimeCommands();
+            beginSingleTimeCommands();
 
         VkBufferCopy copyRegion{};
 
@@ -900,7 +1152,7 @@ namespace rap {
         uint32_t height,
         uint32_t layerCount) {
         VkCommandBuffer commandBuffer =
-                beginSingleTimeCommands();
+            beginSingleTimeCommands();
 
         VkBufferImageCopy region{};
 
@@ -909,14 +1161,14 @@ namespace rap {
         region.bufferImageHeight = 0;
 
         region.imageSubresource.aspectMask =
-                VK_IMAGE_ASPECT_COLOR_BIT;
+            VK_IMAGE_ASPECT_COLOR_BIT;
 
         region.imageSubresource.mipLevel = 0;
         region.imageSubresource.baseArrayLayer = 0;
         region.imageSubresource.layerCount = layerCount;
 
-        region.imageOffset = {0, 0, 0};
-        region.imageExtent = {width, height, 1};
+        region.imageOffset = { 0, 0, 0 };
+        region.imageExtent = { width, height, 1 };
 
         vkCmdCopyBufferToImage(
             commandBuffer,
@@ -930,15 +1182,15 @@ namespace rap {
     }
 
     void RaptorDevice::createImageWithInfo(
-        const VkImageCreateInfo &imageInfo,
+        const VkImageCreateInfo& imageInfo,
         VkMemoryPropertyFlags properties,
-        VkImage &image,
-        VkDeviceMemory &imageMemory) {
+        VkImage& image,
+        VkDeviceMemory& imageMemory) {
         if (vkCreateImage(
-                device_,
-                &imageInfo,
-                nullptr,
-                &image) != VK_SUCCESS) {
+            device_,
+            &imageInfo,
+            nullptr,
+            &image) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to create image!");
         }
@@ -953,30 +1205,30 @@ namespace rap {
         VkMemoryAllocateInfo allocInfo{};
 
         allocInfo.sType =
-                VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 
         allocInfo.allocationSize =
-                memRequirements.size;
+            memRequirements.size;
 
         allocInfo.memoryTypeIndex =
-                findMemoryType(
-                    memRequirements.memoryTypeBits,
-                    properties);
+            findMemoryType(
+                memRequirements.memoryTypeBits,
+                properties);
 
         if (vkAllocateMemory(
-                device_,
-                &allocInfo,
-                nullptr,
-                &imageMemory) != VK_SUCCESS) {
+            device_,
+            &allocInfo,
+            nullptr,
+            &imageMemory) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to allocate image memory!");
         }
 
         if (vkBindImageMemory(
-                device_,
-                image,
-                imageMemory,
-                0) != VK_SUCCESS) {
+            device_,
+            image,
+            imageMemory,
+            0) != VK_SUCCESS) {
             throw std::runtime_error(
                 "failed to bind image memory!");
         }
