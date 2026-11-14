@@ -283,7 +283,7 @@ namespace rap {
 
         
 
-        std::cout << "running raptor v0.0.4" << std::endl;
+        std::cout << "running raptor v0.0.5" << std::endl;
 
         // One uniform buffer per frame in flight.
         std::vector<std::unique_ptr<RapBuffer>> uboBuffers(
